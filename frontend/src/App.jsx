@@ -47,7 +47,7 @@ export default function App() {
     return raw ? JSON.parse(raw) : null;
   });
   const [roomCodeInput, setRoomCodeInput] = useState('');
-  const [roomCode, setRoomCode] = useState('');
+  const [roomCode, setRoomCode] = useState(localStorage.getItem('roomCode') || '');
   const [room, setRoom] = useState(null);
   const [game, setGame] = useState(null);
   const [error, setError] = useState('');
@@ -58,7 +58,13 @@ export default function App() {
     if (!token) return;
     const s = connectSocket(token);
 
-    s.on('room:update', (payload) => setRoom(payload));
+    s.on('room:update', (payload) => {
+      setRoom(payload);
+      if (payload?.code) {
+        setRoomCode(payload.code);
+        localStorage.setItem('roomCode', payload.code);
+      }
+    });
     s.on('game:update', (payload) => {
       setGame(payload);
       setSelectedIds([]);
@@ -102,6 +108,7 @@ export default function App() {
     try {
       const data = await api('/api/rooms', { method: 'POST', token });
       setRoomCode(data.code);
+      localStorage.setItem('roomCode', data.code);
       setRoomCodeInput(data.code);
       const roomData = await api(`/api/rooms/${data.code}`, { token });
       setRoom(roomData);
@@ -118,6 +125,7 @@ export default function App() {
     try {
       await api('/api/rooms/join', { method: 'POST', token, body: { code } });
       setRoomCode(code);
+      localStorage.setItem('roomCode', code);
       const roomData = await api(`/api/rooms/${code}`, { token });
       setRoom(roomData);
       socket?.emit('room:subscribe', { code });
@@ -144,6 +152,7 @@ export default function App() {
     setToken('');
     setUser(null);
     setRoomCode('');
+    localStorage.removeItem('roomCode');
     setRoom(null);
     setGame(null);
     setSelectedIds([]);
@@ -161,6 +170,7 @@ export default function App() {
   const opponentTricks = game?.secondStageTrickWins
     ? Object.entries(game.secondStageTrickWins).find(([id]) => Number(id) !== user.id)?.[1] || 0
     : 0;
+  const canKnock = game?.gameType === 'gin-rummy' && game.mustDiscard && game.yourDeadwood <= 10;
 
   if (!token || !user) {
     return (
@@ -252,6 +262,7 @@ export default function App() {
               {'deckCount' in game ? <div className="metric">Deck: {game.deckCount}</div> : null}
               {'stockCount' in game ? <div className="metric">Stock: {game.stockCount}</div> : null}
               {'discardCount' in game ? <div className="metric">Discard: {game.discardCount}</div> : null}
+              {game.bombsUsed !== undefined ? <div className="metric">Number of Bombs: {game.bombsUsed}</div> : null}
               {game.trumpSuit ? <div className="metric">Trump: {game.trumpSuit}</div> : null}
               {game.yourDeadwood !== undefined ? <div className="metric">Deadwood: {game.yourDeadwood}</div> : null}
               {game.roundNumber ? (
@@ -268,6 +279,9 @@ export default function App() {
                   Rule: {game.topRule.type === 'any' ? 'Any rank' : game.topRule.type === 'max' ? '7 or lower' : 'Same or higher'}
                 </div>
               ) : null}
+              {game.discardTop?.rank === '3' && game.effectiveTopRank ? (
+                <div className="metric">3 mirrors: {game.effectiveTopRank}</div>
+              ) : null}
             </div>
 
             <div className="table-zone">
@@ -279,7 +293,7 @@ export default function App() {
               <div className="middle-zone">
                 {game.discardTop ? (
                   <div className="pile-card">
-                    <div className="zone-title">Discard Top</div>
+                    <div className="zone-title">Discard Pile</div>
                     <CardVisual card={game.discardTop} />
                   </div>
                 ) : null}
@@ -292,10 +306,17 @@ export default function App() {
               </div>
             </div>
 
-            {game.currentTrick?.length ? (
-              <p className="status-text">
-                Trick: {game.currentTrick.map((t) => `${t.userId === user.id ? 'You' : 'Opp'} ${t.card.rank}${t.card.suit}`).join(' | ')}
-              </p>
+            {game.lastTrick?.cards?.length === 2 ? (
+              <div className="trick-board">
+                <div className={`trick-slot ${game.lastTrick.cards[0].userId === game.lastTrick.winnerUserId ? 'winner' : ''}`}>
+                  <div className="zone-title">{game.lastTrick.cards[0].userId === user.id ? 'You' : 'Opponent'}</div>
+                  <CardVisual card={game.lastTrick.cards[0].card} />
+                </div>
+                <div className={`trick-slot ${game.lastTrick.cards[1].userId === game.lastTrick.winnerUserId ? 'winner' : ''}`}>
+                  <div className="zone-title">{game.lastTrick.cards[1].userId === user.id ? 'You' : 'Opponent'}</div>
+                  <CardVisual card={game.lastTrick.cards[1].card} />
+                </div>
+              </div>
             ) : null}
 
             <div className="your-zone">
@@ -341,7 +362,7 @@ export default function App() {
                 <button disabled={game.mustDiscard} onClick={() => act({ type: 'draw', source: 'discard' })}>
                   Draw Discard
                 </button>
-                <button disabled={!game.mustDiscard} onClick={() => act({ type: 'knock' })}>
+                <button disabled={!canKnock} onClick={() => act({ type: 'knock' })}>
                   Knock
                 </button>
               </div>
@@ -371,7 +392,9 @@ export default function App() {
                 >
                   Play Selected
                 </button>
-                <button onClick={() => act({ type: 'take-pile' })}>Take Pile</button>
+                <button className="danger-btn" onClick={() => act({ type: 'take-pile' })}>
+                  Take Pile
+                </button>
               </div>
             ) : null}
 

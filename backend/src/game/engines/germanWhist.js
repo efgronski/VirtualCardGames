@@ -1,4 +1,4 @@
-import { createDeck, removeCardById, shuffle, sortByRank } from '../cards.js';
+import { createDeck, removeCardById, shuffle } from '../cards.js';
 
 function partner(state, userId) {
   return state.playerOrder.find((id) => id !== userId);
@@ -33,13 +33,22 @@ function canFollowSuit(hand, suit) {
   return hand.some((card) => card.suit === suit);
 }
 
+function sortWhistHand(cards) {
+  const suits = ['C', 'D', 'H', 'S'];
+  return [...cards].sort((a, b) => {
+    const rankDiff = rankScore(a.rank) - rankScore(b.rank);
+    if (rankDiff !== 0) return rankDiff;
+    return suits.indexOf(a.suit) - suits.indexOf(b.suit);
+  });
+}
+
 export const germanWhistEngine = {
   create(players) {
     const deck = shuffle(createDeck());
     const hands = {};
 
     for (const id of players) {
-      hands[id] = sortByRank(deck.splice(0, 13));
+      hands[id] = sortWhistHand(deck.splice(0, 13));
     }
 
     const dealerUserId = players[Math.floor(Math.random() * players.length)];
@@ -62,6 +71,7 @@ export const germanWhistEngine = {
       stockTricksPlayed: 0,
       currentTrick: { leaderUserId: firstLeader, cards: [] },
       secondStageTrickWins: { [players[0]]: 0, [players[1]]: 0 },
+      lastTrick: null,
       winnerUserId: null,
       message: 'Stock stage: non-dealer leads.'
     };
@@ -80,7 +90,7 @@ export const germanWhistEngine = {
       const leadSuit = state.currentTrick.cards[0].card.suit;
       if (card.suit !== leadSuit && canFollowSuit(hand, leadSuit)) {
         hand.push(card);
-        state.hands[userId] = sortByRank(hand);
+        state.hands[userId] = sortWhistHand(hand);
         return { ok: false, error: 'You must follow suit when possible' };
       }
     }
@@ -99,8 +109,8 @@ export const germanWhistEngine = {
       state.hands[winner].push(state.upcard);
       const loserCard = state.stock.shift();
       if (loserCard) state.hands[loser].push(loserCard);
-      state.hands[winner] = sortByRank(state.hands[winner]);
-      state.hands[loser] = sortByRank(state.hands[loser]);
+      state.hands[winner] = sortWhistHand(state.hands[winner]);
+      state.hands[loser] = sortWhistHand(state.hands[loser]);
 
       state.stockTricksPlayed += 1;
       state.upcard = state.stock.shift() || null;
@@ -115,6 +125,12 @@ export const germanWhistEngine = {
       state.secondStageTrickWins[winner] += 1;
       state.message = 'Endgame: trick counted.';
     }
+
+    state.lastTrick = {
+      cards: [...state.currentTrick.cards],
+      winnerUserId: winner,
+      stage: state.stage
+    };
 
     state.currentTrick = { leaderUserId: winner, cards: [] };
     state.leaderUserId = winner;
@@ -146,6 +162,7 @@ export const germanWhistEngine = {
       upcard: state.upcard,
       stockTricksPlayed: state.stockTricksPlayed,
       secondStageTrickWins: state.secondStageTrickWins,
+      lastTrick: state.lastTrick,
       currentTrick: state.currentTrick.cards,
       message: state.message
     };

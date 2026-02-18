@@ -80,6 +80,11 @@ button {
   padding: 0.6rem 0.85rem;
 }
 
+.danger-btn {
+  background: linear-gradient(145deg, #ff6b6b, #e03131);
+  color: #fff;
+}
+
 input {
   border: 1px solid rgba(255, 255, 255, 0.2);
   background: rgba(255, 255, 255, 0.08);
@@ -231,6 +236,24 @@ button:disabled {
   gap: 0.5rem;
   justify-content: center;
   align-items: flex-start;
+}
+
+.trick-board {
+  margin: 0.8rem 0;
+  display: flex;
+  gap: 0.8rem;
+}
+
+.trick-slot {
+  padding: 0.5rem;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.trick-slot.winner {
+  border-color: rgba(255, 200, 87, 0.9);
+  box-shadow: 0 0 0 2px rgba(255, 200, 87, 0.25);
 }
 
 .back-stack {
