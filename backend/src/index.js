@@ -1,12 +1,10 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
-import bcrypt from 'bcryptjs';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { authMiddleware, issueToken, verifyToken } from './auth.js';
-import { createUser, findUserById, findUserByUsername } from './db.js';
-import { applyGameAction, buildGameView, createGameState, GAME_TYPES } from './game/gameManager.js';
+import { applyGameAction, buildGameView, createGameState, GAME_TYPES, resolveDeferredGameState } from './game/gameManager.js';
 
 const app = express();
 app.use(cors({ origin: process.env.CORS_ORIGIN?.split(',') || ['http://localhost:5173'] }));
@@ -19,6 +17,17 @@ const io = new Server(httpServer, {
 
 const rooms = new Map();
 const socketsByUserId = new Map();
+const sessionsByUserId = new Map();
+const usernameToUserId = new Map();
+const releaseTimers = new Map();
+
+function normalizeUsername(username) {
+  return String(username || '').trim().toLowerCase();
+}
+
+function makeUserId() {
+  return Math.floor(Date.now() + Math.random() * 1000000);
+}
 
 function makeRoomCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -59,42 +68,81 @@ function getUserRoom(userId) {
   return null;
 }
 
+function ensureSessionFromTokenUser(tokenUser) {
+  const normalized = normalizeUsername(tokenUser.username);
+  const existingOwner = usernameToUserId.get(normalized);
+  if (existingOwner && existingOwner !== tokenUser.id) return null;
+
+  const session = sessionsByUserId.get(tokenUser.id) || {
+    id: tokenUser.id,
+    username: tokenUser.username,
+    normalizedUsername: normalized,
+    connections: 0
+  };
+
+  session.username = tokenUser.username;
+  session.normalizedUsername = normalized;
+  sessionsByUserId.set(session.id, session);
+  usernameToUserId.set(normalized, session.id);
+
+  return session;
+}
+
+function scheduleSessionRelease(userId) {
+  if (releaseTimers.has(userId)) clearTimeout(releaseTimers.get(userId));
+  const timer = setTimeout(() => {
+    const session = sessionsByUserId.get(userId);
+    if (!session || session.connections > 0) return;
+    sessionsByUserId.delete(userId);
+    if (usernameToUserId.get(session.normalizedUsername) === userId) {
+      usernameToUserId.delete(session.normalizedUsername);
+    }
+    releaseTimers.delete(userId);
+  }, 5 * 60 * 1000);
+  releaseTimers.set(userId, timer);
+}
+
+function cancelSessionRelease(userId) {
+  const timer = releaseTimers.get(userId);
+  if (timer) {
+    clearTimeout(timer);
+    releaseTimers.delete(userId);
+  }
+}
+
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 
-app.post('/api/auth/register', async (req, res) => {
+app.post('/api/auth/guest', (req, res) => {
   const username = String(req.body.username || '').trim();
-  const password = String(req.body.password || '');
-
-  if (username.length < 3 || password.length < 4) {
-    return res.status(400).json({ error: 'Username or password too short' });
+  if (username.length < 3 || username.length > 20) {
+    return res.status(400).json({ error: 'Username must be 3-20 characters' });
   }
 
-  if (findUserByUsername(username)) {
-    return res.status(409).json({ error: 'Username already exists' });
+  const normalized = normalizeUsername(username);
+  if (usernameToUserId.has(normalized)) {
+    return res.status(409).json({ error: 'Username is currently in use' });
   }
 
-  const passwordHash = await bcrypt.hash(password, 10);
-  const result = createUser(username, passwordHash);
-  const user = findUserById(result.lastInsertRowid);
+  const user = { id: makeUserId(), username };
+  const session = {
+    id: user.id,
+    username,
+    normalizedUsername: normalized,
+    connections: 0
+  };
+
+  sessionsByUserId.set(user.id, session);
+  usernameToUserId.set(normalized, user.id);
+
   const token = issueToken(user);
   res.json({ token, user });
 });
 
-app.post('/api/auth/login', async (req, res) => {
-  const username = String(req.body.username || '').trim();
-  const password = String(req.body.password || '');
-
-  const user = findUserByUsername(username);
-  if (!user) return res.status(401).json({ error: 'Invalid credentials' });
-
-  const valid = await bcrypt.compare(password, user.password_hash);
-  if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
-
-  const token = issueToken(user);
-  res.json({ token, user: { id: user.id, username: user.username } });
-});
-
 app.post('/api/rooms', authMiddleware, (req, res) => {
+  if (!sessionsByUserId.has(req.user.id)) {
+    return res.status(401).json({ error: 'Session expired. Rejoin with username.' });
+  }
+
   if (getUserRoom(req.user.id)) {
     return res.status(400).json({ error: 'You are already in a room' });
   }
@@ -116,6 +164,10 @@ app.post('/api/rooms', authMiddleware, (req, res) => {
 });
 
 app.post('/api/rooms/join', authMiddleware, (req, res) => {
+  if (!sessionsByUserId.has(req.user.id)) {
+    return res.status(401).json({ error: 'Session expired. Rejoin with username.' });
+  }
+
   const code = String(req.body.code || '').toUpperCase();
   const room = rooms.get(code);
   if (!room) return res.status(404).json({ error: 'Room not found' });
@@ -142,7 +194,10 @@ io.use((socket, next) => {
   const token = socket.handshake.auth?.token;
   if (!token) return next(new Error('No token'));
   try {
-    socket.user = verifyToken(token);
+    const tokenUser = verifyToken(token);
+    const session = ensureSessionFromTokenUser(tokenUser);
+    if (!session) return next(new Error('Username in use'));
+    socket.user = { id: session.id, username: session.username };
     next();
   } catch {
     next(new Error('Invalid token'));
@@ -151,6 +206,12 @@ io.use((socket, next) => {
 
 io.on('connection', (socket) => {
   const user = socket.user;
+  const session = sessionsByUserId.get(user.id);
+  if (session) {
+    session.connections += 1;
+    cancelSessionRelease(user.id);
+  }
+
   socketsByUserId.set(user.id, socket.id);
 
   const room = getUserRoom(user.id);
@@ -191,11 +252,28 @@ io.on('connection', (socket) => {
     }
 
     emitRoom(roomData.code);
+
+    if (result.deferred) {
+      setTimeout(() => {
+        const latestRoom = rooms.get(roomData.code);
+        if (!latestRoom || !latestRoom.gameState) return;
+        resolveDeferredGameState(latestRoom.gameState);
+        emitRoom(latestRoom.code);
+      }, result.delayMs || 3000);
+    }
   });
 
   socket.on('disconnect', () => {
     const activeSocket = socketsByUserId.get(user.id);
     if (activeSocket === socket.id) socketsByUserId.delete(user.id);
+
+    const liveSession = sessionsByUserId.get(user.id);
+    if (liveSession) {
+      liveSession.connections = Math.max(0, liveSession.connections - 1);
+      if (liveSession.connections === 0) {
+        scheduleSessionRelease(user.id);
+      }
+    }
 
     const userRoom = getUserRoom(user.id);
     if (userRoom) {

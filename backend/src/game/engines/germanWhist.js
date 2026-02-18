@@ -55,7 +55,6 @@ export const germanWhistEngine = {
     const firstLeader = players.find((id) => id !== dealerUserId);
 
     const upcard = deck.shift();
-    const trumpSuit = upcard.suit;
 
     return {
       type: 'german-whist',
@@ -64,13 +63,14 @@ export const germanWhistEngine = {
       turnUserId: firstLeader,
       leaderUserId: firstLeader,
       hands,
-      trumpSuit,
+      trumpSuit: upcard.suit,
       stage: 'stock',
       upcard,
       stock: deck,
       stockTricksPlayed: 0,
       currentTrick: { leaderUserId: firstLeader, cards: [] },
       secondStageTrickWins: { [players[0]]: 0, [players[1]]: 0 },
+      pendingResolution: null,
       lastTrick: null,
       winnerUserId: null,
       message: 'Stock stage: non-dealer leads.'
@@ -79,6 +79,7 @@ export const germanWhistEngine = {
 
   action(state, userId, action) {
     if (state.winnerUserId) return { ok: false, error: 'Game is over' };
+    if (state.pendingResolution) return { ok: false, error: 'Resolving previous trick...' };
     if (state.turnUserId !== userId) return { ok: false, error: 'Not your turn' };
     if (action.type !== 'play') return { ok: false, error: 'Unknown action' };
 
@@ -105,7 +106,24 @@ export const germanWhistEngine = {
     const winner = trickWinnerUserId(state);
     const loser = partner(state, winner);
 
-    if (state.stage === 'stock') {
+    state.lastTrick = {
+      cards: [...state.currentTrick.cards],
+      winnerUserId: winner,
+      stage: state.stage
+    };
+    state.pendingResolution = { winner, loser, stage: state.stage };
+    state.turnUserId = null;
+    state.message = `${winner === userId ? 'You' : 'Opponent'} won the trick. Resolving...`;
+
+    return { ok: true, deferred: true, delayMs: 3000 };
+  },
+
+  resolvePending(state) {
+    if (!state.pendingResolution) return;
+
+    const { winner, loser, stage } = state.pendingResolution;
+
+    if (stage === 'stock') {
       state.hands[winner].push(state.upcard);
       const loserCard = state.stock.shift();
       if (loserCard) state.hands[loser].push(loserCard);
@@ -126,15 +144,10 @@ export const germanWhistEngine = {
       state.message = 'Endgame: trick counted.';
     }
 
-    state.lastTrick = {
-      cards: [...state.currentTrick.cards],
-      winnerUserId: winner,
-      stage: state.stage
-    };
-
     state.currentTrick = { leaderUserId: winner, cards: [] };
     state.leaderUserId = winner;
     state.turnUserId = winner;
+    state.pendingResolution = null;
 
     const allHandsEmpty = state.playerOrder.every((id) => state.hands[id].length === 0);
     if (allHandsEmpty) {
@@ -144,8 +157,6 @@ export const germanWhistEngine = {
       state.winnerUserId = aWins === bWins ? null : aWins > bWins ? a : b;
       state.message = `Endgame tricks: ${aWins}-${bWins}.`;
     }
-
-    return { ok: true };
   },
 
   view(state, userId, players) {
@@ -164,6 +175,7 @@ export const germanWhistEngine = {
       secondStageTrickWins: state.secondStageTrickWins,
       lastTrick: state.lastTrick,
       currentTrick: state.currentTrick.cards,
+      isResolving: Boolean(state.pendingResolution),
       message: state.message
     };
   }

@@ -38,9 +38,7 @@ function BackStack({ count }) {
 }
 
 export default function App() {
-  const [authMode, setAuthMode] = useState('login');
   const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
   const [token, setToken] = useState(localStorage.getItem('token') || '');
   const [user, setUser] = useState(() => {
     const raw = localStorage.getItem('user');
@@ -90,9 +88,9 @@ export default function App() {
     e.preventDefault();
     setError('');
     try {
-      const data = await api(`/api/auth/${authMode}`, {
+      const data = await api('/api/auth/guest', {
         method: 'POST',
-        body: { username, password }
+        body: { username }
       });
       setToken(data.token);
       setUser(data.user);
@@ -177,21 +175,11 @@ export default function App() {
       <main className="page auth-page">
         <section className="panel auth-panel">
           <h1>Virtual Card Games</h1>
-          <p>Private real-time table for two players.</p>
+          <p>Choose a unique username currently in use on the site.</p>
           <form onSubmit={handleAuth}>
             <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Username" required />
-            <input
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              type="password"
-              placeholder="Password"
-              required
-            />
-            <button type="submit">{authMode === 'login' ? 'Login' : 'Register'}</button>
+            <button type="submit">Enter Lobby</button>
           </form>
-          <button className="link" onClick={() => setAuthMode((m) => (m === 'login' ? 'register' : 'login'))}>
-            Switch to {authMode === 'login' ? 'register' : 'login'}
-          </button>
           {error ? <p className="error">{error}</p> : null}
         </section>
       </main>
@@ -306,7 +294,26 @@ export default function App() {
               </div>
             </div>
 
-            {game.lastTrick?.cards?.length === 2 ? (
+            {game.currentTrick?.length > 0 ? (
+              <div className="trick-board">
+                <div
+                  className={`trick-slot ${
+                    game.currentTrick[0] && game.lastTrick?.winnerUserId === game.currentTrick[0].userId ? 'winner' : ''
+                  }`}
+                >
+                  <div className="zone-title">{game.currentTrick[0]?.userId === user.id ? 'You' : 'Opponent'}</div>
+                  {game.currentTrick[0] ? <CardVisual card={game.currentTrick[0].card} /> : null}
+                </div>
+                <div
+                  className={`trick-slot ${
+                    game.currentTrick[1] && game.lastTrick?.winnerUserId === game.currentTrick[1].userId ? 'winner' : ''
+                  }`}
+                >
+                  <div className="zone-title">{game.currentTrick[1]?.userId === user.id ? 'You' : 'Opponent'}</div>
+                  {game.currentTrick[1] ? <CardVisual card={game.currentTrick[1].card} /> : <div className="trick-wait">Waiting...</div>}
+                </div>
+              </div>
+            ) : game.lastTrick?.cards?.length === 2 ? (
               <div className="trick-board">
                 <div className={`trick-slot ${game.lastTrick.cards[0].userId === game.lastTrick.winnerUserId ? 'winner' : ''}`}>
                   <div className="zone-title">{game.lastTrick.cards[0].userId === user.id ? 'You' : 'Opponent'}</div>
@@ -324,7 +331,7 @@ export default function App() {
               <div className="hand-grid">
                 {(game.yourHand || []).map((card) => {
                   const selected = selectedIds.includes(card.id);
-                  const disabled = !isMyTurn || game.winnerUserId !== null || game.roundOver;
+                  const disabled = !isMyTurn || game.winnerUserId !== null || game.roundOver || game.isResolving;
 
                   return (
                     <button

@@ -256,6 +256,18 @@ button:disabled {
   box-shadow: 0 0 0 2px rgba(255, 200, 87, 0.25);
 }
 
+.trick-wait {
+  width: 86px;
+  height: 125px;
+  border-radius: 10px;
+  border: 1px dashed rgba(255, 255, 255, 0.25);
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+}
+
 .back-stack {
   position: relative;
   min-height: 160px;
@@ -349,6 +361,11 @@ button:disabled {
   }
 
   .card-shell {
+    width: 72px;
+    height: 105px;
+  }
+
+  .trick-wait {
     width: 72px;
     height: 105px;
   }

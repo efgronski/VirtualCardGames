@@ -25,3 +25,10 @@ export function buildGameView(state, userId, players) {
   const engine = GAME_MAP[state.type];
   return engine.view(state, userId, players);
 }
+
+export function resolveDeferredGameState(state) {
+  const engine = GAME_MAP[state.type];
+  if (engine.resolvePending) {
+    engine.resolvePending(state);
+  }
+}
