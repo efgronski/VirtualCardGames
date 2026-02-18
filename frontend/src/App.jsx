@@ -8,8 +8,33 @@ const GAME_TYPES = [
   { value: 'german-whist', label: 'German Whist' }
 ];
 
-function cardLabel(card) {
-  return `${card.rank}${card.suit}`;
+function toCid(card) {
+  if (!card) return '';
+  const rank = card.rank === '10' ? 'T' : card.rank;
+  return `${rank}${String(card.suit || '').toLowerCase()}`;
+}
+
+function CardVisual({ card, faceDown = false }) {
+  const cid = faceDown ? '00' : toCid(card);
+  return (
+    <div className="card-shell" aria-label={faceDown ? 'Face-down card' : `${card.rank}${card.suit}`}>
+      <playing-card cid={cid}></playing-card>
+      <span className="card-fallback">{faceDown ? '🂠' : `${card.rank}${card.suit}`}</span>
+    </div>
+  );
+}
+
+function BackStack({ count }) {
+  const visible = Math.min(count, 10);
+  return (
+    <div className="back-stack" aria-label={`Opponent has ${count} cards`}>
+      {Array.from({ length: visible }).map((_, i) => (
+        <div key={i} className="stack-card" style={{ transform: `translateX(${i * 18}px)` }}>
+          <CardVisual faceDown />
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export default function App() {
@@ -37,6 +62,7 @@ export default function App() {
     s.on('game:update', (payload) => {
       setGame(payload);
       setSelectedIds([]);
+      setError('');
     });
     s.on('error:message', (msg) => setError(msg));
 
@@ -102,11 +128,13 @@ export default function App() {
 
   function selectGame(gameType) {
     if (!roomCode) return;
+    setError('');
     socket?.emit('game:select', { code: roomCode, gameType });
   }
 
   function act(action) {
     if (!roomCode) return;
+    setError('');
     socket?.emit('game:action', { code: roomCode, action });
   }
 
@@ -126,12 +154,20 @@ export default function App() {
     return [...new Set(cards.map((c) => c.rank))];
   }, [game?.yourHand, selectedIds]);
 
+  const opponentScore = game?.scores
+    ? Object.entries(game.scores).find(([id]) => Number(id) !== user.id)?.[1] || 0
+    : 0;
+
+  const opponentTricks = game?.secondStageTrickWins
+    ? Object.entries(game.secondStageTrickWins).find(([id]) => Number(id) !== user.id)?.[1] || 0
+    : 0;
+
   if (!token || !user) {
     return (
-      <main className="page">
+      <main className="page auth-page">
         <section className="panel auth-panel">
-          <h1>Two-Player Card Games</h1>
-          <p>Simple login for your private project.</p>
+          <h1>Virtual Card Games</h1>
+          <p>Private real-time table for two players.</p>
           <form onSubmit={handleAuth}>
             <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Username" required />
             <input
@@ -154,31 +190,32 @@ export default function App() {
 
   return (
     <main className="page">
-      <section className="panel">
+      <section className="panel board-panel">
         <div className="top-row">
-          <h1>Welcome, {user.username}</h1>
-          <button className="link" onClick={logout}>
-            Logout
-          </button>
+          <h1>Virtual Card Games</h1>
+          <div className="top-actions">
+            <span className="user-chip">{user.username}</span>
+            <button className="link" onClick={logout}>
+              Logout
+            </button>
+          </div>
         </div>
 
         {!roomCode ? (
-          <>
-            <div className="lobby-actions">
-              <button onClick={createRoom}>Create Room</button>
-              <div className="join-row">
-                <input
-                  value={roomCodeInput}
-                  onChange={(e) => setRoomCodeInput(e.target.value.toUpperCase())}
-                  placeholder="Join code"
-                />
-                <button onClick={joinRoom}>Join Room</button>
-              </div>
+          <section className="lobby-actions">
+            <button onClick={createRoom}>Create Room</button>
+            <div className="join-row">
+              <input
+                value={roomCodeInput}
+                onChange={(e) => setRoomCodeInput(e.target.value.toUpperCase())}
+                placeholder="Join code"
+              />
+              <button onClick={joinRoom}>Join Room</button>
             </div>
-          </>
+          </section>
         ) : (
-          <>
-            <h2>Room: {roomCode}</h2>
+          <section>
+            <h2>Room {roomCode}</h2>
             <div className="players">
               {(room?.players || []).map((p) => (
                 <div key={p.userId} className="player-pill">
@@ -190,106 +227,110 @@ export default function App() {
 
             {room?.canStart ? (
               <div className="game-select">
-                <p>Select game:</p>
-                <div className="game-buttons">
-                  {GAME_TYPES.map((g) => (
-                    <button key={g.value} onClick={() => selectGame(g.value)}>
-                      {g.label}
-                    </button>
-                  ))}
-                </div>
+                {GAME_TYPES.map((g) => (
+                  <button key={g.value} onClick={() => selectGame(g.value)}>
+                    {g.label}
+                  </button>
+                ))}
               </div>
             ) : (
               <p>Waiting for second player...</p>
             )}
-          </>
+          </section>
         )}
 
         {game ? (
-          <section className="board">
-            <h3>{GAME_TYPES.find((g) => g.value === game.gameType)?.label || game.gameType}</h3>
-            <p className="status">{game.message}</p>
-            <p className="status">Turn: {game.turnUserId === user.id ? 'You' : 'Opponent'}</p>
-            {game.roundNumber ? (
-              <p className="status">
-                Round: {game.roundNumber}/{game.totalRounds}
-              </p>
-            ) : null}
-            {game.scores ? (
-              <p className="status">
-                Match score: You {game.scores[user.id] || 0} / Opponent{' '}
-                {Object.entries(game.scores).find(([id]) => Number(id) !== user.id)?.[1] || 0}
-              </p>
-            ) : null}
-            {game.roundOver && game.roundWinnerUserId !== undefined ? (
-              <p className="winner">
-                {game.roundWinnerUserId === null
-                  ? 'Round tied.'
-                  : game.roundWinnerUserId === user.id
-                    ? 'You won the round.'
-                    : 'Opponent won the round.'}
-              </p>
-            ) : null}
-            {game.winnerUserId !== null ? (
-              <p className="winner">{game.winnerUserId === user.id ? 'You win the match.' : 'Opponent wins the match.'}</p>
-            ) : null}
+          <section className="table-wrap">
+            <div className="table-header">
+              <h3>{GAME_TYPES.find((g) => g.value === game.gameType)?.label || game.gameType}</h3>
+              <span className={`turn-pill ${isMyTurn ? 'yours' : ''}`}>{isMyTurn ? 'Your Turn' : 'Opponent Turn'}</span>
+            </div>
 
-            {'opponentCardCount' in game ? <p>Opponent cards: {game.opponentCardCount}</p> : null}
-            {'deckCount' in game ? <p>Deck: {game.deckCount}</p> : null}
-            {'discardCount' in game ? <p>Discard pile: {game.discardCount}</p> : null}
-            {game.discardTop ? <p>Discard top: {cardLabel(game.discardTop)}</p> : null}
-            {game.yourDeadwood !== undefined ? <p>Your deadwood: {game.yourDeadwood}</p> : null}
-            {game.trumpSuit ? <p>Trump suit: {game.trumpSuit}</p> : null}
-            {game.stockCount !== undefined ? <p>Stock: {game.stockCount}</p> : null}
-            {game.upcard ? <p>Upcard: {cardLabel(game.upcard)}</p> : null}
-            {game.stage ? <p>Stage: {game.stage === 'stock' ? 'Stock stage' : 'Endgame'}</p> : null}
-            {game.secondStageTrickWins ? (
-              <p>
-                Tricks: You {game.secondStageTrickWins[user.id] || 0} / Opponent{' '}
-                {Object.entries(game.secondStageTrickWins).find(([id]) => Number(id) !== user.id)?.[1] || 0}
-              </p>
-            ) : null}
-            {game.topRule ? (
-              <p>
-                Rule: {game.topRule.type === 'any' ? 'Any rank' : game.topRule.type === 'max' ? `7 or lower` : 'Same or higher'}
-              </p>
-            ) : null}
+            <p className="status-text">{game.message}</p>
+
+            <div className="metrics">
+              {'deckCount' in game ? <div className="metric">Deck: {game.deckCount}</div> : null}
+              {'stockCount' in game ? <div className="metric">Stock: {game.stockCount}</div> : null}
+              {'discardCount' in game ? <div className="metric">Discard: {game.discardCount}</div> : null}
+              {game.trumpSuit ? <div className="metric">Trump: {game.trumpSuit}</div> : null}
+              {game.yourDeadwood !== undefined ? <div className="metric">Deadwood: {game.yourDeadwood}</div> : null}
+              {game.roundNumber ? (
+                <div className="metric">
+                  Round {game.roundNumber}/{game.totalRounds}
+                </div>
+              ) : null}
+              {game.scores ? <div className="metric">Score: You {game.scores[user.id] || 0} - Opp {opponentScore}</div> : null}
+              {game.secondStageTrickWins ? (
+                <div className="metric">Endgame tricks: You {game.secondStageTrickWins[user.id] || 0} - Opp {opponentTricks}</div>
+              ) : null}
+              {game.topRule ? (
+                <div className="metric">
+                  Rule: {game.topRule.type === 'any' ? 'Any rank' : game.topRule.type === 'max' ? '7 or lower' : 'Same or higher'}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="table-zone">
+              <div className="opponent-zone">
+                <div className="zone-title">Opponent</div>
+                <BackStack count={game.opponentCardCount || 0} />
+              </div>
+
+              <div className="middle-zone">
+                {game.discardTop ? (
+                  <div className="pile-card">
+                    <div className="zone-title">Discard Top</div>
+                    <CardVisual card={game.discardTop} />
+                  </div>
+                ) : null}
+                {game.upcard ? (
+                  <div className="pile-card">
+                    <div className="zone-title">Upcard</div>
+                    <CardVisual card={game.upcard} />
+                  </div>
+                ) : null}
+              </div>
+            </div>
 
             {game.currentTrick?.length ? (
-              <p>
-                Current trick:{' '}
-                {game.currentTrick.map((t) => `${t.userId === user.id ? 'You' : 'Opp'}:${cardLabel(t.card)}`).join(' | ')}
+              <p className="status-text">
+                Trick: {game.currentTrick.map((t) => `${t.userId === user.id ? 'You' : 'Opp'} ${t.card.rank}${t.card.suit}`).join(' | ')}
               </p>
             ) : null}
 
-            <div className="hand">
-              {(game.yourHand || []).map((card) => {
-                const selected = selectedIds.includes(card.id);
-                return (
-                  <button
-                    key={card.id}
-                    disabled={!isMyTurn || game.winnerUserId !== null || game.roundOver}
-                    className={`card ${selected ? 'selected' : ''}`}
-                    onClick={() => {
-                      if (game.gameType === 'gin-rummy' && game.mustDiscard) {
-                        act({ type: 'discard', cardId: card.id });
-                        return;
-                      }
+            <div className="your-zone">
+              <div className="zone-title">Your Hand</div>
+              <div className="hand-grid">
+                {(game.yourHand || []).map((card) => {
+                  const selected = selectedIds.includes(card.id);
+                  const disabled = !isMyTurn || game.winnerUserId !== null || game.roundOver;
 
-                      if (game.gameType === 'german-whist') {
-                        act({ type: 'play', cardId: card.id });
-                        return;
-                      }
+                  return (
+                    <button
+                      key={card.id}
+                      disabled={disabled}
+                      className={`card-btn ${selected ? 'selected' : ''}`}
+                      onClick={() => {
+                        if (game.gameType === 'gin-rummy' && game.mustDiscard) {
+                          act({ type: 'discard', cardId: card.id });
+                          return;
+                        }
 
-                      setSelectedIds((prev) =>
-                        prev.includes(card.id) ? prev.filter((id) => id !== card.id) : [...prev, card.id]
-                      );
-                    }}
-                  >
-                    {cardLabel(card)}
-                  </button>
-                );
-              })}
+                        if (game.gameType === 'german-whist') {
+                          act({ type: 'play', cardId: card.id });
+                          return;
+                        }
+
+                        setSelectedIds((prev) =>
+                          prev.includes(card.id) ? prev.filter((id) => id !== card.id) : [...prev, card.id]
+                        );
+                      }}
+                    >
+                      <CardVisual card={card} />
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             {game.gameType === 'gin-rummy' && isMyTurn && game.winnerUserId === null && !game.roundOver ? (
@@ -305,6 +346,7 @@ export default function App() {
                 </button>
               </div>
             ) : null}
+
             {game.gameType === 'gin-rummy' && game.roundOver && game.winnerUserId === null ? (
               <div className="controls">
                 <button onClick={() => act({ type: 'next-round' })}>Start Next Round</button>
@@ -333,7 +375,18 @@ export default function App() {
               </div>
             ) : null}
 
-            {game.gameType === 'german-whist' ? <p>Tap a card in your hand to play.</p> : null}
+            {game.winnerUserId !== null ? (
+              <p className="winner-text">{game.winnerUserId === user.id ? 'You win.' : 'Opponent wins.'}</p>
+            ) : null}
+            {game.roundOver && game.roundWinnerUserId !== undefined ? (
+              <p className="winner-text">
+                {game.roundWinnerUserId === null
+                  ? 'Round tied.'
+                  : game.roundWinnerUserId === user.id
+                    ? 'You won the round.'
+                    : 'Opponent won the round.'}
+              </p>
+            ) : null}
           </section>
         ) : null}
 
