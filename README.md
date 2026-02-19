@@ -41,7 +41,7 @@ A minimal personal project for two remote players using:
 
 ## Features
 
-- Username + password auth (passwords hashed with bcrypt)
+- Username
 - Room create/join with short code
 - Game selection (Gin Rummy, Shithead, German Whist)
 - Server-authoritative card shuffling and move validation
