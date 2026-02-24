@@ -362,7 +362,7 @@ export default function App() {
             </div>
             <p className="status-text">Classic Klondike 3-card draw: build tableau down alternating colors, foundations A to K by suit.</p>
             <div className="metrics">
-              <div className="metric">Deck: {soloGame.deck.length}</div>
+              <div className="metric">Deck: {soloGame.stock.length}</div>
               <div className="metric">Waste: {soloGame.waste.length}</div>
               <div className="metric">
                 Foundation: {Object.values(soloGame.foundations).reduce((sum, cards) => sum + cards.length, 0)}
