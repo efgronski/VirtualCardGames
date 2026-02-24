@@ -241,6 +241,7 @@ export const ginRummyEngine = {
   view(state, userId, players) {
     const opponent = players.find((p) => p.userId !== userId);
     const opponentId = opponent?.userId;
+    const revealHands = state.roundOver || state.winnerUserId !== null;
 
     return {
       gameType: 'gin-rummy',
@@ -255,6 +256,7 @@ export const ginRummyEngine = {
       discardTop: state.discardPile[state.discardPile.length - 1] || null,
       yourHand: state.hands[userId],
       opponentCardCount: opponentId ? state.hands[opponentId].length : 0,
+      opponentHand: revealHands && opponentId ? state.hands[opponentId] : null,
       mustDiscard: state.mustDiscard,
       message: state.message,
       scores: { ...state.scores },

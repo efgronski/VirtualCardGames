@@ -41,6 +41,7 @@ function publicRoom(room) {
     code: room.code,
     players: room.players.map((p) => ({ userId: p.userId, username: p.username, connected: Boolean(socketsByUserId.get(p.userId)) })),
     gameType: room.gameType,
+    gameId: room.gameId || 0,
     canStart: room.players.length === 2,
     gameTypes: GAME_TYPES
   };
@@ -56,7 +57,10 @@ function emitRoom(roomCode) {
     for (const player of room.players) {
       const socketId = socketsByUserId.get(player.userId);
       if (!socketId) continue;
-      io.to(socketId).emit('game:update', buildGameView(room.gameState, player.userId, room.players));
+      io.to(socketId).emit('game:update', {
+        gameId: room.gameId || 0,
+        ...buildGameView(room.gameState, player.userId, room.players)
+      });
     }
   }
 }
@@ -156,6 +160,7 @@ app.post('/api/rooms', authMiddleware, (req, res) => {
     code,
     players: [{ userId: req.user.id, username: req.user.username }],
     gameType: null,
+    gameId: 0,
     gameState: null,
     createdAt: Date.now()
   });
@@ -228,6 +233,12 @@ io.on('connection', (socket) => {
     emitRoom(roomData.code);
   });
 
+  socket.on('room:unsubscribe', ({ code }) => {
+    const roomCode = String(code || '').toUpperCase();
+    if (!roomCode) return;
+    socket.leave(roomCode);
+  });
+
   socket.on('game:select', ({ code, gameType }) => {
     const roomData = rooms.get(String(code || '').toUpperCase());
     if (!roomData) return socket.emit('error:message', 'Room not found');
@@ -236,14 +247,32 @@ io.on('connection', (socket) => {
     if (roomData.players.length !== 2) return socket.emit('error:message', 'Need two players');
 
     roomData.gameType = gameType;
+    roomData.gameId = (roomData.gameId || 0) + 1;
     roomData.gameState = createGameState(gameType, roomData.players.map((p) => p.userId));
+    io.to(roomData.code).emit('game:reinit', { code: roomData.code, gameId: roomData.gameId });
     emitRoom(roomData.code);
   });
 
-  socket.on('game:action', ({ code, action }) => {
+  socket.on('game:snapshot', ({ code, gameId }) => {
     const roomData = rooms.get(String(code || '').toUpperCase());
     if (!roomData || !roomData.gameState) return;
     if (!roomData.players.some((p) => p.userId === user.id)) return;
+    if (gameId != null && gameId !== roomData.gameId) return;
+    socket.emit('game:update', {
+      gameId: roomData.gameId || 0,
+      ...buildGameView(roomData.gameState, user.id, roomData.players)
+    });
+  });
+
+  socket.on('game:action', ({ code, gameId, action }) => {
+    const roomData = rooms.get(String(code || '').toUpperCase());
+    if (!roomData || !roomData.gameState) return;
+    if (!roomData.players.some((p) => p.userId === user.id)) return;
+    if (gameId != null && gameId !== roomData.gameId) {
+      socket.emit('error:message', 'Stale game session. Resyncing...');
+      socket.emit('game:reinit', { code: roomData.code, gameId: roomData.gameId });
+      return;
+    }
 
     const result = applyGameAction(roomData.gameState, user.id, action || {});
     if (!result.ok) {
@@ -254,9 +283,11 @@ io.on('connection', (socket) => {
     emitRoom(roomData.code);
 
     if (result.deferred) {
+      const lockedGameId = roomData.gameId;
       setTimeout(() => {
         const latestRoom = rooms.get(roomData.code);
         if (!latestRoom || !latestRoom.gameState) return;
+        if (latestRoom.gameId !== lockedGameId) return;
         resolveDeferredGameState(latestRoom.gameState);
         emitRoom(latestRoom.code);
       }, result.delayMs || 3000);

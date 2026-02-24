@@ -8,6 +8,8 @@ const GAME_TYPES = [
   { value: 'german-whist', label: 'German Whist' }
 ];
 
+const SOLO_GAME = { value: 'solitaire', label: 'Solitaire' };
+
 function toCid(card) {
   if (!card) return '';
   const rank = card.rank === '10' ? 'T' : card.rank;
@@ -37,6 +39,41 @@ function BackStack({ count }) {
   );
 }
 
+function makeDeck() {
+  const suits = ['S', 'H', 'D', 'C'];
+  const ranks = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
+  const deck = [];
+  for (const suit of suits) {
+    for (const rank of ranks) deck.push({ id: `${rank}${suit}`, rank, suit });
+  }
+  for (let i = deck.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [deck[i], deck[j]] = [deck[j], deck[i]];
+  }
+  return deck;
+}
+
+function solitaireRank(rank) {
+  const order = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
+  return order.indexOf(rank) + 1;
+}
+
+function createSolitaireState() {
+  return {
+    deck: makeDeck(),
+    waste: [],
+    foundations: { S: [], H: [], D: [], C: [] },
+    won: false
+  };
+}
+
+function canMoveToFoundation(card, foundation) {
+  if (!card) return false;
+  if (foundation.length === 0) return card.rank === 'A';
+  const top = foundation[foundation.length - 1];
+  return card.suit === top.suit && solitaireRank(card.rank) === solitaireRank(top.rank) + 1;
+}
+
 export default function App() {
   const [username, setUsername] = useState('');
   const [token, setToken] = useState(localStorage.getItem('token') || '');
@@ -48,6 +85,8 @@ export default function App() {
   const [roomCode, setRoomCode] = useState(localStorage.getItem('roomCode') || '');
   const [room, setRoom] = useState(null);
   const [game, setGame] = useState(null);
+  const [activeGameId, setActiveGameId] = useState(0);
+  const [soloGame, setSoloGame] = useState(null);
   const [error, setError] = useState('');
   const [selectedIds, setSelectedIds] = useState([]);
   const [socket, setSocket] = useState(null);
@@ -56,22 +95,52 @@ export default function App() {
     if (!token) return;
     const s = connectSocket(token);
 
-    s.on('room:update', (payload) => {
+    const onRoomUpdate = (payload) => {
       setRoom(payload);
       if (payload?.code) {
         setRoomCode(payload.code);
         localStorage.setItem('roomCode', payload.code);
       }
-    });
-    s.on('game:update', (payload) => {
+      if (payload?.gameId != null) {
+        setActiveGameId(payload.gameId);
+      }
+    };
+    const onGameUpdate = (payload) => {
+      if (payload?.gameId != null) setActiveGameId(payload.gameId);
       setGame(payload);
       setSelectedIds([]);
       setError('');
-    });
+    };
+    const onGameReinit = ({ code, gameId }) => {
+      if (code && roomCode && code !== roomCode) return;
+      setGame(null);
+      setSelectedIds([]);
+      setActiveGameId(gameId || 0);
+      if (code) {
+        s.emit('room:subscribe', { code });
+        s.emit('game:snapshot', { code, gameId });
+      }
+    };
+    const onConnect = () => {
+      const storedRoomCode = localStorage.getItem('roomCode');
+      if (storedRoomCode) {
+        s.emit('room:subscribe', { code: storedRoomCode });
+        s.emit('game:snapshot', { code: storedRoomCode });
+      }
+    };
+
+    s.on('room:update', onRoomUpdate);
+    s.on('game:update', onGameUpdate);
+    s.on('game:reinit', onGameReinit);
+    s.on('connect', onConnect);
     s.on('error:message', (msg) => setError(msg));
 
     setSocket(s);
     return () => {
+      s.off('room:update', onRoomUpdate);
+      s.off('game:update', onGameUpdate);
+      s.off('game:reinit', onGameReinit);
+      s.off('connect', onConnect);
       s.disconnect();
       setSocket(null);
     };
@@ -80,6 +149,7 @@ export default function App() {
   useEffect(() => {
     if (!socket || !roomCode) return;
     socket.emit('room:subscribe', { code: roomCode });
+    socket.emit('game:snapshot', { code: roomCode, gameId: activeGameId || undefined });
   }, [socket, roomCode]);
 
   const isMyTurn = game?.turnUserId === user?.id;
@@ -103,6 +173,7 @@ export default function App() {
 
   async function createRoom() {
     setError('');
+    setSoloGame(null);
     try {
       const data = await api('/api/rooms', { method: 'POST', token });
       setRoomCode(data.code);
@@ -118,6 +189,7 @@ export default function App() {
 
   async function joinRoom() {
     setError('');
+    setSoloGame(null);
     const code = roomCodeInput.trim().toUpperCase();
     if (!code) return;
     try {
@@ -135,13 +207,63 @@ export default function App() {
   function selectGame(gameType) {
     if (!roomCode) return;
     setError('');
+    setSoloGame(null);
     socket?.emit('game:select', { code: roomCode, gameType });
   }
 
   function act(action) {
     if (!roomCode) return;
     setError('');
-    socket?.emit('game:action', { code: roomCode, action });
+    socket?.emit('game:action', { code: roomCode, gameId: activeGameId || undefined, action });
+  }
+
+  function startSolitaire() {
+    setError('');
+    if (roomCode) {
+      socket?.emit('room:unsubscribe', { code: roomCode });
+    }
+    setRoomCode('');
+    localStorage.removeItem('roomCode');
+    setRoom(null);
+    setGame(null);
+    setSelectedIds([]);
+    setSoloGame(createSolitaireState());
+  }
+
+  function solitaireDraw() {
+    setSoloGame((prev) => {
+      if (!prev) return prev;
+      if (prev.deck.length > 0) {
+        const nextDeck = [...prev.deck];
+        const card = nextDeck.shift();
+        return { ...prev, deck: nextDeck, waste: [card, ...prev.waste] };
+      }
+      if (prev.waste.length <= 1) return prev;
+      const recycle = [...prev.waste].reverse();
+      const top = recycle.shift();
+      return { ...prev, deck: recycle, waste: [top] };
+    });
+  }
+
+  function solitaireToFoundation() {
+    setSoloGame((prev) => {
+      if (!prev || prev.won || prev.waste.length === 0) return prev;
+      const [top, ...restWaste] = prev.waste;
+      const foundation = prev.foundations[top.suit];
+      if (!canMoveToFoundation(top, foundation)) return prev;
+
+      const nextFoundations = {
+        ...prev.foundations,
+        [top.suit]: [...foundation, top]
+      };
+      const total = Object.values(nextFoundations).reduce((sum, cards) => sum + cards.length, 0);
+      return {
+        ...prev,
+        waste: restWaste,
+        foundations: nextFoundations,
+        won: total === 52
+      };
+    });
   }
 
   function logout() {
@@ -153,6 +275,7 @@ export default function App() {
     localStorage.removeItem('roomCode');
     setRoom(null);
     setGame(null);
+    setSoloGame(null);
     setSelectedIds([]);
   }
 
@@ -202,6 +325,7 @@ export default function App() {
         {!roomCode ? (
           <section className="lobby-actions">
             <button onClick={createRoom}>Create Room</button>
+            <button onClick={startSolitaire}>{SOLO_GAME.label}</button>
             <div className="join-row">
               <input
                 value={roomCodeInput}
@@ -237,7 +361,57 @@ export default function App() {
           </section>
         )}
 
-        {game ? (
+        {soloGame ? (
+          <section className="table-wrap">
+            <div className="table-header">
+              <h3>{SOLO_GAME.label}</h3>
+              <span className={`turn-pill ${soloGame.won ? 'yours' : ''}`}>{soloGame.won ? 'Solved' : 'In Progress'}</span>
+            </div>
+            <p className="status-text">Draw cards and move the waste card to foundation in suit order (A to K).</p>
+            <div className="metrics">
+              <div className="metric">Deck: {soloGame.deck.length}</div>
+              <div className="metric">Waste: {soloGame.waste.length}</div>
+              <div className="metric">
+                Foundation: {Object.values(soloGame.foundations).reduce((sum, cards) => sum + cards.length, 0)}
+              </div>
+            </div>
+            <div className="table-zone">
+              <div className="opponent-zone">
+                <div className="zone-title">Deck</div>
+                <div className="hand-grid">
+                  {soloGame.deck.length ? <CardVisual faceDown /> : <div className="trick-wait">Empty</div>}
+                </div>
+                <div className="controls">
+                  <button onClick={solitaireDraw}>Draw</button>
+                </div>
+              </div>
+              <div className="middle-zone">
+                <div className="pile-card">
+                  <div className="zone-title">Waste</div>
+                  {soloGame.waste[0] ? <CardVisual card={soloGame.waste[0]} /> : <div className="trick-wait">Empty</div>}
+                </div>
+                <div className="pile-card">
+                  <div className="zone-title">Foundations</div>
+                  <div className="hand-grid">
+                    {['S', 'H', 'D', 'C'].map((suit) =>
+                      soloGame.foundations[suit].length ? (
+                        <CardVisual key={suit} card={soloGame.foundations[suit][soloGame.foundations[suit].length - 1]} />
+                      ) : (
+                        <div key={suit} className="trick-wait">
+                          {suit}
+                        </div>
+                      )
+                    )}
+                  </div>
+                  <div className="controls">
+                    <button onClick={solitaireToFoundation}>Move Waste to Foundation</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            {soloGame.won ? <p className="winner-text">You solved it.</p> : null}
+          </section>
+        ) : game ? (
           <section className="table-wrap">
             <div className="table-header">
               <h3>{GAME_TYPES.find((g) => g.value === game.gameType)?.label || game.gameType}</h3>
@@ -275,7 +449,15 @@ export default function App() {
             <div className="table-zone">
               <div className="opponent-zone">
                 <div className="zone-title">Opponent</div>
-                <BackStack count={game.opponentCardCount || 0} />
+                {game.gameType === 'gin-rummy' && game.roundOver && game.opponentHand ? (
+                  <div className="hand-grid">
+                    {game.opponentHand.map((card) => (
+                      <CardVisual key={`opp-${card.id}`} card={card} />
+                    ))}
+                  </div>
+                ) : (
+                  <BackStack count={game.opponentCardCount || 0} />
+                )}
               </div>
 
               <div className="middle-zone">
