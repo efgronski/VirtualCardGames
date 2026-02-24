@@ -656,12 +656,7 @@ export default function App() {
                       onClick={() => {
                         if (actionDisabled) return;
                         if (game.gameType === 'gin-rummy' && game.mustDiscard) {
-                          if (knockDiscardMode) {
-                            act({ type: 'knock-discard', cardId: card.id });
-                            setKnockDiscardMode(false);
-                          } else {
-                            act({ type: 'discard', cardId: card.id });
-                          }
+                          // Discard is drag-and-drop only to prevent accidental clicks.
                           return;
                         }
 
@@ -684,13 +679,18 @@ export default function App() {
 
             {game.gameType === 'gin-rummy' && isMyTurn && game.winnerUserId === null && !game.roundOver ? (
               <div className="controls">
-                <button disabled={game.mustDiscard} onClick={() => act({ type: 'draw', source: 'deck' })}>
+                <button className="draw-deck-btn" disabled={game.mustDiscard} onClick={() => act({ type: 'draw', source: 'deck' })}>
                   Draw Deck
                 </button>
-                <button disabled={game.mustDiscard} onClick={() => act({ type: 'draw', source: 'discard' })}>
+                <button
+                  className="draw-discard-btn"
+                  disabled={game.mustDiscard}
+                  onClick={() => act({ type: 'draw', source: 'discard' })}
+                >
                   Draw Discard
                 </button>
                 <button
+                  className="knock-discard-btn"
                   disabled={!canKnock}
                   onClick={() => {
                     setKnockDiscardMode((v) => !v);

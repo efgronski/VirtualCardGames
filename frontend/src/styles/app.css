@@ -85,6 +85,21 @@ button {
   color: #fff;
 }
 
+.draw-deck-btn {
+  background: linear-gradient(145deg, #4dabf7, #1c7ed6);
+  color: #fff;
+}
+
+.draw-discard-btn {
+  background: linear-gradient(145deg, #63e6be, #12b886);
+  color: #062a1d;
+}
+
+.knock-discard-btn {
+  background: linear-gradient(145deg, #ffd43b, #f59f00);
+  color: #3a2500;
+}
+
 input {
   border: 1px solid rgba(255, 255, 255, 0.2);
   background: rgba(255, 255, 255, 0.08);
