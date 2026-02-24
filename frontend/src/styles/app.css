@@ -344,6 +344,88 @@ button:disabled {
   margin-top: 0.8rem;
 }
 
+.shake {
+  animation: shake 240ms ease-in-out 2;
+}
+
+.solitaire-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 0.8rem;
+}
+
+.solitaire-stock-waste {
+  display: flex;
+  gap: 0.9rem;
+  align-items: flex-start;
+}
+
+.waste-fan {
+  position: relative;
+  min-width: 140px;
+  min-height: 130px;
+}
+
+.waste-card {
+  position: absolute;
+  top: 0;
+}
+
+.solitaire-foundations {
+  display: flex;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.foundation-drop {
+  min-width: 120px;
+}
+
+.solitaire-tableau {
+  margin-top: 1rem;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(88px, 1fr));
+  gap: 0.6rem;
+}
+
+.tableau-col {
+  border: 1px dashed rgba(255, 255, 255, 0.18);
+  border-radius: 10px;
+  padding: 0.45rem;
+  background: rgba(255, 255, 255, 0.03);
+  min-height: 360px;
+}
+
+.tableau-stack {
+  position: relative;
+  min-height: 320px;
+}
+
+.tableau-card {
+  position: absolute;
+  left: 0;
+}
+
+.tableau-empty {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+@keyframes shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-4px);
+  }
+  75% {
+    transform: translateX(4px);
+  }
+}
+
 @media (max-width: 900px) {
   .table-zone {
     grid-template-columns: 1fr;
@@ -351,6 +433,16 @@ button:disabled {
 
   .middle-zone {
     justify-content: flex-start;
+  }
+
+  .solitaire-top {
+    flex-direction: column;
+  }
+
+  .solitaire-tableau {
+    overflow-x: auto;
+    grid-template-columns: repeat(7, 88px);
+    padding-bottom: 0.5rem;
   }
 }
 

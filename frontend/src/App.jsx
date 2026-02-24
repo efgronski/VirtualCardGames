@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useReducer, useState } from 'react';
 import { api } from './api';
 import { connectSocket } from './socket';
+import { solitaireReducer, dealKlondike3 } from './solitaire/klondike';
 
 const GAME_TYPES = [
   { value: 'gin-rummy', label: 'Gin Rummy' },
@@ -8,7 +9,7 @@ const GAME_TYPES = [
   { value: 'german-whist', label: 'German Whist' }
 ];
 
-const SOLO_GAME = { value: 'solitaire', label: 'Solitaire' };
+const SOLO_GAME = { value: 'solitaire', label: 'Solitaire (Klondike 3-Draw)' };
 
 function toCid(card) {
   if (!card) return '';
@@ -39,41 +40,6 @@ function BackStack({ count }) {
   );
 }
 
-function makeDeck() {
-  const suits = ['S', 'H', 'D', 'C'];
-  const ranks = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
-  const deck = [];
-  for (const suit of suits) {
-    for (const rank of ranks) deck.push({ id: `${rank}${suit}`, rank, suit });
-  }
-  for (let i = deck.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [deck[i], deck[j]] = [deck[j], deck[i]];
-  }
-  return deck;
-}
-
-function solitaireRank(rank) {
-  const order = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
-  return order.indexOf(rank) + 1;
-}
-
-function createSolitaireState() {
-  return {
-    deck: makeDeck(),
-    waste: [],
-    foundations: { S: [], H: [], D: [], C: [] },
-    won: false
-  };
-}
-
-function canMoveToFoundation(card, foundation) {
-  if (!card) return false;
-  if (foundation.length === 0) return card.rank === 'A';
-  const top = foundation[foundation.length - 1];
-  return card.suit === top.suit && solitaireRank(card.rank) === solitaireRank(top.rank) + 1;
-}
-
 export default function App() {
   const [username, setUsername] = useState('');
   const [token, setToken] = useState(localStorage.getItem('token') || '');
@@ -86,8 +52,10 @@ export default function App() {
   const [room, setRoom] = useState(null);
   const [game, setGame] = useState(null);
   const [activeGameId, setActiveGameId] = useState(0);
-  const [soloGame, setSoloGame] = useState(null);
+  const [soloMode, setSoloMode] = useState(false);
+  const [soloGame, dispatchSolitaire] = useReducer(solitaireReducer, undefined, dealKlondike3);
   const [error, setError] = useState('');
+  const [soloFeedback, setSoloFeedback] = useState('');
   const [selectedIds, setSelectedIds] = useState([]);
   const [socket, setSocket] = useState(null);
 
@@ -173,7 +141,7 @@ export default function App() {
 
   async function createRoom() {
     setError('');
-    setSoloGame(null);
+    setSoloMode(false);
     try {
       const data = await api('/api/rooms', { method: 'POST', token });
       setRoomCode(data.code);
@@ -189,7 +157,7 @@ export default function App() {
 
   async function joinRoom() {
     setError('');
-    setSoloGame(null);
+    setSoloMode(false);
     const code = roomCodeInput.trim().toUpperCase();
     if (!code) return;
     try {
@@ -207,7 +175,7 @@ export default function App() {
   function selectGame(gameType) {
     if (!roomCode) return;
     setError('');
-    setSoloGame(null);
+    setSoloMode(false);
     socket?.emit('game:select', { code: roomCode, gameType });
   }
 
@@ -227,43 +195,61 @@ export default function App() {
     setRoom(null);
     setGame(null);
     setSelectedIds([]);
-    setSoloGame(createSolitaireState());
+    setSoloMode(true);
+    dispatchSolitaire({ type: 'NEW_GAME' });
   }
 
   function solitaireDraw() {
-    setSoloGame((prev) => {
-      if (!prev) return prev;
-      if (prev.deck.length > 0) {
-        const nextDeck = [...prev.deck];
-        const card = nextDeck.shift();
-        return { ...prev, deck: nextDeck, waste: [card, ...prev.waste] };
-      }
-      if (prev.waste.length <= 1) return prev;
-      const recycle = [...prev.waste].reverse();
-      const top = recycle.shift();
-      return { ...prev, deck: recycle, waste: [top] };
-    });
+    dispatchSolitaire({ type: 'DRAW' });
   }
 
-  function solitaireToFoundation() {
-    setSoloGame((prev) => {
-      if (!prev || prev.won || prev.waste.length === 0) return prev;
-      const [top, ...restWaste] = prev.waste;
-      const foundation = prev.foundations[top.suit];
-      if (!canMoveToFoundation(top, foundation)) return prev;
+  function solitaireAutoWaste() {
+    dispatchSolitaire({ type: 'AUTO_WASTE' });
+  }
 
-      const nextFoundations = {
-        ...prev.foundations,
-        [top.suit]: [...foundation, top]
-      };
-      const total = Object.values(nextFoundations).reduce((sum, cards) => sum + cards.length, 0);
-      return {
-        ...prev,
-        waste: restWaste,
-        foundations: nextFoundations,
-        won: total === 52
-      };
-    });
+  function solitaireNewGame() {
+    dispatchSolitaire({ type: 'NEW_GAME' });
+  }
+
+  function solitaireUndo() {
+    dispatchSolitaire({ type: 'UNDO' });
+  }
+
+  function handleSoloDragStart(e, payload) {
+    e.dataTransfer.setData('application/json', JSON.stringify(payload));
+  }
+
+  function handleSoloDropOnTableau(e, toCol) {
+    e.preventDefault();
+    const raw = e.dataTransfer.getData('application/json');
+    if (!raw) return;
+    const payload = JSON.parse(raw);
+    if (payload.type === 'waste') {
+      dispatchSolitaire({ type: 'MOVE_WASTE_TO_TABLEAU', toCol });
+    } else if (payload.type === 'tableau') {
+      dispatchSolitaire({
+        type: 'MOVE_TABLEAU_TO_TABLEAU',
+        fromCol: payload.fromCol,
+        startIndex: payload.startIndex,
+        toCol
+      });
+    }
+  }
+
+  function handleSoloDropOnFoundation(e) {
+    e.preventDefault();
+    const raw = e.dataTransfer.getData('application/json');
+    if (!raw) return;
+    const payload = JSON.parse(raw);
+    if (payload.type === 'waste') {
+      dispatchSolitaire({ type: 'MOVE_WASTE_TO_FOUNDATION' });
+    } else if (payload.type === 'tableau') {
+      dispatchSolitaire({
+        type: 'MOVE_TABLEAU_TO_FOUNDATION',
+        fromCol: payload.fromCol,
+        startIndex: payload.startIndex
+      });
+    }
   }
 
   function logout() {
@@ -275,9 +261,16 @@ export default function App() {
     localStorage.removeItem('roomCode');
     setRoom(null);
     setGame(null);
-    setSoloGame(null);
+    setSoloMode(false);
     setSelectedIds([]);
   }
+
+  useEffect(() => {
+    if (!soloGame?.invalidMoveReason) return;
+    setSoloFeedback(soloGame.invalidMoveReason);
+    const t = setTimeout(() => setSoloFeedback(''), 900);
+    return () => clearTimeout(t);
+  }, [soloGame?.invalidMoveTick]);
 
   const selectedRanks = useMemo(() => {
     const cards = game?.yourHand?.filter((c) => selectedIds.includes(c.id)) || [];
@@ -361,53 +354,104 @@ export default function App() {
           </section>
         )}
 
-        {soloGame ? (
+        {soloMode ? (
           <section className="table-wrap">
             <div className="table-header">
               <h3>{SOLO_GAME.label}</h3>
               <span className={`turn-pill ${soloGame.won ? 'yours' : ''}`}>{soloGame.won ? 'Solved' : 'In Progress'}</span>
             </div>
-            <p className="status-text">Draw cards and move the waste card to foundation in suit order (A to K).</p>
+            <p className="status-text">Classic Klondike 3-card draw: build tableau down alternating colors, foundations A to K by suit.</p>
             <div className="metrics">
               <div className="metric">Deck: {soloGame.deck.length}</div>
               <div className="metric">Waste: {soloGame.waste.length}</div>
               <div className="metric">
                 Foundation: {Object.values(soloGame.foundations).reduce((sum, cards) => sum + cards.length, 0)}
               </div>
+              <div className="metric">Undo: {soloGame.history.length}</div>
             </div>
-            <div className="table-zone">
-              <div className="opponent-zone">
-                <div className="zone-title">Deck</div>
-                <div className="hand-grid">
-                  {soloGame.deck.length ? <CardVisual faceDown /> : <div className="trick-wait">Empty</div>}
+            <div className="controls">
+              <button onClick={solitaireNewGame}>New Game</button>
+              <button onClick={solitaireUndo}>Undo</button>
+            </div>
+            {soloFeedback ? <p className="error shake">{soloFeedback}</p> : null}
+
+            <div className="solitaire-top">
+              <div className="solitaire-stock-waste">
+                <div className="pile-card">
+                  <div className="zone-title">Stock</div>
+                  <button className="card-btn" onClick={solitaireDraw}>
+                    {soloGame.stock.length ? <CardVisual faceDown /> : <div className="trick-wait">Recycle</div>}
+                  </button>
                 </div>
-                <div className="controls">
-                  <button onClick={solitaireDraw}>Draw</button>
+                <div className="pile-card">
+                  <div className="zone-title">Waste (Top Playable)</div>
+                  <div className="waste-fan">
+                    {soloGame.waste.slice(-3).map((card, idx, arr) => (
+                      <button
+                        key={card.id + idx}
+                        draggable={idx === arr.length - 1}
+                        onDragStart={(e) => handleSoloDragStart(e, { type: 'waste' })}
+                        onClick={() => idx === arr.length - 1 && solitaireAutoWaste()}
+                        className="card-btn waste-card"
+                        style={{ transform: `translateX(${idx * 22}px)` }}
+                      >
+                        <CardVisual card={card} />
+                      </button>
+                    ))}
+                    {soloGame.waste.length === 0 ? <div className="trick-wait">Empty</div> : null}
+                  </div>
                 </div>
               </div>
-              <div className="middle-zone">
-                <div className="pile-card">
-                  <div className="zone-title">Waste</div>
-                  {soloGame.waste[0] ? <CardVisual card={soloGame.waste[0]} /> : <div className="trick-wait">Empty</div>}
-                </div>
-                <div className="pile-card">
-                  <div className="zone-title">Foundations</div>
-                  <div className="hand-grid">
-                    {['S', 'H', 'D', 'C'].map((suit) =>
-                      soloGame.foundations[suit].length ? (
-                        <CardVisual key={suit} card={soloGame.foundations[suit][soloGame.foundations[suit].length - 1]} />
-                      ) : (
-                        <div key={suit} className="trick-wait">
-                          {suit}
-                        </div>
-                      )
+              <div className="solitaire-foundations">
+                {['S', 'H', 'D', 'C'].map((suit) => (
+                  <div
+                    key={suit}
+                    className="pile-card foundation-drop"
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={handleSoloDropOnFoundation}
+                  >
+                    <div className="zone-title">Foundation {suit}</div>
+                    {soloGame.foundations[suit].length ? (
+                      <CardVisual card={soloGame.foundations[suit][soloGame.foundations[suit].length - 1]} />
+                    ) : (
+                      <div className="trick-wait">{suit}</div>
                     )}
                   </div>
-                  <div className="controls">
-                    <button onClick={solitaireToFoundation}>Move Waste to Foundation</button>
+                ))}
+              </div>
+            </div>
+
+            <div className="solitaire-tableau">
+              {soloGame.tableau.map((col, colIdx) => (
+                <div
+                  key={`col-${colIdx}`}
+                  className="tableau-col"
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => handleSoloDropOnTableau(e, colIdx)}
+                >
+                  <div className="zone-title">Column {colIdx + 1}</div>
+                  <div className="tableau-stack">
+                    {col.down.map((card, downIdx) => (
+                      <div key={`down-${card.id}-${downIdx}`} className="tableau-card" style={{ top: `${downIdx * 18}px` }}>
+                        <CardVisual faceDown />
+                      </div>
+                    ))}
+                    {col.up.map((card, upIdx) => (
+                      <button
+                        key={`up-${card.id}-${upIdx}`}
+                        className="card-btn tableau-card"
+                        draggable
+                        onDragStart={(e) => handleSoloDragStart(e, { type: 'tableau', fromCol: colIdx, startIndex: upIdx })}
+                        onClick={() => dispatchSolitaire({ type: 'AUTO_TABLEAU', fromCol: colIdx, upIndex: upIdx })}
+                        style={{ top: `${(col.down.length + upIdx) * 24}px` }}
+                      >
+                        <CardVisual card={card} />
+                      </button>
+                    ))}
+                    {col.down.length === 0 && col.up.length === 0 ? <div className="trick-wait tableau-empty">K</div> : null}
                   </div>
                 </div>
-              </div>
+              ))}
             </div>
             {soloGame.won ? <p className="winner-text">You solved it.</p> : null}
           </section>
