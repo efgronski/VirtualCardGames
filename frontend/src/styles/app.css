@@ -284,6 +284,12 @@ button:disabled {
   min-width: 92px;
 }
 
+.drop-active {
+  border: 1px dashed rgba(255, 200, 87, 0.8);
+  border-radius: 10px;
+  padding: 0.3rem;
+}
+
 .hand-grid {
   display: flex;
   gap: 0.42rem;

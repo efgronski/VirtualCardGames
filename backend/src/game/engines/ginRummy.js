@@ -209,13 +209,27 @@ export const ginRummyEngine = {
       return { ok: true };
     }
 
-    if (action.type === 'discard') {
+    if (action.type === 'discard' || action.type === 'knock-discard') {
       if (!state.mustDiscard) return { ok: false, error: 'Draw first' };
       const removed = removeCardById(hand, action.cardId);
       if (!removed) return { ok: false, error: 'Card not in hand' };
 
       state.discardPile.push(removed);
       state.mustDiscard = false;
+
+      if (action.type === 'knock-discard') {
+        const myDeadwood = minDeadwood(state.hands[userId]);
+        if (myDeadwood > 10) {
+          state.discardPile.pop();
+          hand.push(removed);
+          state.hands[userId] = sortByRank(hand);
+          state.mustDiscard = true;
+          return { ok: false, error: 'After discard, deadwood must be 10 or less to knock' };
+        }
+        state.knockedBy = userId;
+        finishRound(state, userId);
+        return { ok: true };
+      }
 
       if (!state.deck.length) {
         finishRound(state, null);
@@ -228,11 +242,7 @@ export const ginRummyEngine = {
 
     if (action.type === 'knock') {
       if (!state.mustDiscard) return { ok: false, error: 'Knock after drawing' };
-      const myDeadwood = minDeadwood(state.hands[userId]);
-      if (myDeadwood > 10) return { ok: false, error: 'Deadwood must be 10 or less to knock' };
-      state.knockedBy = userId;
-      finishRound(state, userId);
-      return { ok: true };
+      return { ok: false, error: 'Use knock-discard and choose a discard card' };
     }
 
     return { ok: false, error: 'Unknown action' };

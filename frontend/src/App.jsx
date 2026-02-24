@@ -57,6 +57,9 @@ export default function App() {
   const [error, setError] = useState('');
   const [soloFeedback, setSoloFeedback] = useState('');
   const [selectedIds, setSelectedIds] = useState([]);
+  const [knockDiscardMode, setKnockDiscardMode] = useState(false);
+  const [handOrders, setHandOrders] = useState({});
+  const [dragCardId, setDragCardId] = useState(null);
   const [socket, setSocket] = useState(null);
 
   useEffect(() => {
@@ -77,6 +80,7 @@ export default function App() {
       if (payload?.gameId != null) setActiveGameId(payload.gameId);
       setGame(payload);
       setSelectedIds([]);
+      setKnockDiscardMode(false);
       setError('');
     };
     const onGameReinit = ({ code, gameId }) => {
@@ -121,6 +125,7 @@ export default function App() {
   }, [socket, roomCode]);
 
   const isMyTurn = game?.turnUserId === user?.id;
+  const canReorderHand = game?.gameType === 'gin-rummy' || game?.gameType === 'german-whist';
 
   async function handleAuth(e) {
     e.preventDefault();
@@ -183,6 +188,30 @@ export default function App() {
     if (!roomCode) return;
     setError('');
     socket?.emit('game:action', { code: roomCode, gameId: activeGameId || undefined, action });
+  }
+
+  function moveHandCardInOrder(fromId, toId) {
+    if (!gameKey || !fromId || !toId || fromId === toId) return;
+    setHandOrders((prev) => {
+      const order = [...(prev[gameKey] || [])];
+      const fromIdx = order.indexOf(fromId);
+      const toIdx = order.indexOf(toId);
+      if (fromIdx === -1 || toIdx === -1) return prev;
+      order.splice(fromIdx, 1);
+      order.splice(toIdx, 0, fromId);
+      return { ...prev, [gameKey]: order };
+    });
+  }
+
+  function discardDraggedCard() {
+    if (!dragCardId || !game || game.gameType !== 'gin-rummy' || !isMyTurn || !game.mustDiscard) return;
+    if (knockDiscardMode) {
+      act({ type: 'knock-discard', cardId: dragCardId });
+      setKnockDiscardMode(false);
+    } else {
+      act({ type: 'discard', cardId: dragCardId });
+    }
+    setDragCardId(null);
   }
 
   function startSolitaire() {
@@ -284,7 +313,38 @@ export default function App() {
   const opponentTricks = game?.secondStageTrickWins
     ? Object.entries(game.secondStageTrickWins).find(([id]) => Number(id) !== user.id)?.[1] || 0
     : 0;
-  const canKnock = game?.gameType === 'gin-rummy' && game.mustDiscard && game.yourDeadwood <= 10;
+  const canKnock = game?.gameType === 'gin-rummy' && game.mustDiscard;
+  const gameKey = game ? `${roomCode || 'no-room'}-${game.gameType}-${game.gameId || 0}` : null;
+
+  useEffect(() => {
+    if (!gameKey || !game?.yourHand) return;
+    setHandOrders((prev) => {
+      const existing = prev[gameKey] || [];
+      const ids = game.yourHand.map((c) => c.id);
+      const nextOrder = existing.filter((id) => ids.includes(id));
+      for (const id of ids) {
+        if (!nextOrder.includes(id)) nextOrder.push(id);
+      }
+      return { ...prev, [gameKey]: nextOrder };
+    });
+  }, [gameKey, game?.yourHand]);
+
+  useEffect(() => {
+    if (game?.gameType !== 'gin-rummy' || !game?.mustDiscard) {
+      setKnockDiscardMode(false);
+    }
+  }, [game?.gameType, game?.mustDiscard]);
+
+  const orderedHand = useMemo(() => {
+    if (!game?.yourHand || !gameKey) return [];
+    const byId = new Map(game.yourHand.map((c) => [c.id, c]));
+    const order = handOrders[gameKey] || [];
+    const out = order.map((id) => byId.get(id)).filter(Boolean);
+    for (const card of game.yourHand) {
+      if (!out.find((c) => c.id === card.id)) out.push(card);
+    }
+    return out;
+  }, [game?.yourHand, gameKey, handOrders]);
 
   if (!token || !user) {
     return (
@@ -506,9 +566,18 @@ export default function App() {
 
               <div className="middle-zone">
                 {game.discardTop ? (
-                  <div className="pile-card">
+                  <div
+                    className={`pile-card ${game.gameType === 'gin-rummy' && isMyTurn && game.mustDiscard ? 'drop-active' : ''}`}
+                    onDragOver={(e) => {
+                      if (game.gameType === 'gin-rummy' && isMyTurn && game.mustDiscard) e.preventDefault();
+                    }}
+                    onDrop={discardDraggedCard}
+                  >
                     <div className="zone-title">Discard Pile</div>
                     <CardVisual card={game.discardTop} />
+                    {game.gameType === 'gin-rummy' && isMyTurn && game.mustDiscard ? (
+                      <div className="zone-title">{knockDiscardMode ? 'Drop card to knock' : 'Drop card to discard'}</div>
+                    ) : null}
                   </div>
                 ) : null}
                 {game.upcard ? (
@@ -555,18 +624,44 @@ export default function App() {
             <div className="your-zone">
               <div className="zone-title">Your Hand</div>
               <div className="hand-grid">
-                {(game.yourHand || []).map((card) => {
+                {(orderedHand || []).map((card) => {
                   const selected = selectedIds.includes(card.id);
-                  const disabled = !isMyTurn || game.winnerUserId !== null || game.roundOver || game.isResolving;
+                  const actionDisabled = !isMyTurn || game.winnerUserId !== null || game.roundOver || game.isResolving;
+                  const reorderDisabled = game.winnerUserId !== null || game.roundOver || game.isResolving;
+                  const disabled = !canReorderHand && actionDisabled;
 
                   return (
                     <button
                       key={card.id}
                       disabled={disabled}
                       className={`card-btn ${selected ? 'selected' : ''}`}
+                      draggable={
+                        (!reorderDisabled && canReorderHand) ||
+                        (game.gameType === 'gin-rummy' && isMyTurn && game.mustDiscard)
+                      }
+                      onDragStart={(e) => {
+                        setDragCardId(card.id);
+                        e.dataTransfer.setData('text/plain', card.id);
+                      }}
+                      onDragEnd={() => setDragCardId(null)}
+                      onDragOver={(e) => {
+                        if (canReorderHand) e.preventDefault();
+                      }}
+                      onDrop={(e) => {
+                        if (!canReorderHand) return;
+                        e.preventDefault();
+                        const fromId = e.dataTransfer.getData('text/plain') || dragCardId;
+                        moveHandCardInOrder(fromId, card.id);
+                      }}
                       onClick={() => {
+                        if (actionDisabled) return;
                         if (game.gameType === 'gin-rummy' && game.mustDiscard) {
-                          act({ type: 'discard', cardId: card.id });
+                          if (knockDiscardMode) {
+                            act({ type: 'knock-discard', cardId: card.id });
+                            setKnockDiscardMode(false);
+                          } else {
+                            act({ type: 'discard', cardId: card.id });
+                          }
                           return;
                         }
 
@@ -595,8 +690,13 @@ export default function App() {
                 <button disabled={game.mustDiscard} onClick={() => act({ type: 'draw', source: 'discard' })}>
                   Draw Discard
                 </button>
-                <button disabled={!canKnock} onClick={() => act({ type: 'knock' })}>
-                  Knock
+                <button
+                  disabled={!canKnock}
+                  onClick={() => {
+                    setKnockDiscardMode((v) => !v);
+                  }}
+                >
+                  {knockDiscardMode ? 'Cancel Knock' : 'Knock by Discard'}
                 </button>
               </div>
             ) : null}
