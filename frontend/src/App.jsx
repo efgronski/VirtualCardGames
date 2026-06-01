@@ -60,7 +60,6 @@ function DieFace({ value, held = false }) {
           {pips.map((pip) => (
             <span key={pip} className={`die-pip ${pip}`}></span>
           ))}
-          <span className="die-face-value">{value}</span>
         </>
       ) : (
         <span className="die-face-placeholder">Roll</span>
@@ -116,7 +115,9 @@ function DiceGameBoard({ game, user, isMyTurn, act }) {
         {orderedPlayers.map((player) => (
           <section
             key={player.userId}
-            className={`dice-player-panel ${player.isViewer ? 'player-red' : 'player-blue'} ${player.isCurrentTurn ? 'active' : ''}`}
+            className={`dice-player-panel ${player.isViewer ? 'player-red' : 'player-blue'} ${
+              player.isCurrentTurn ? 'active' : !game.gameOver ? 'dimmed' : ''
+            }`}
           >
             <div className="dice-player-header">
               <div>
