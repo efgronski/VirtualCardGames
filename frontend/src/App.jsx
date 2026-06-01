@@ -308,6 +308,7 @@ export default function App() {
 
   const isMyTurn = game?.turnUserId === user?.id;
   const canReorderHand = game?.gameType === 'gin-rummy' || game?.gameType === 'german-whist';
+  const availableGameTypes = GAME_TYPES.filter((gameType) => (room?.gameTypes || GAME_TYPES.map((g) => g.value)).includes(gameType.value));
 
   async function handleAuth(e) {
     e.preventDefault();
@@ -584,7 +585,7 @@ export default function App() {
 
             {room?.canStart ? (
               <div className="game-select">
-                {GAME_TYPES.map((g) => (
+                {availableGameTypes.map((g) => (
                   <button key={g.value} onClick={() => selectGame(g.value)}>
                     {g.label}
                   </button>
