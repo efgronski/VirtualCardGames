@@ -3,6 +3,7 @@ import { api } from './api';
 import { connectSocket } from './socket';
 import { solitaireReducer, dealKlondike3 } from './solitaire/klondike';
 import { DICE_GAME_CATEGORIES } from './diceGame';
+import { soloDiceGameReducer } from './soloDiceGame';
 
 const GAME_TYPES = [
   { value: 'gin-rummy', label: 'Gin Rummy' },
@@ -11,7 +12,10 @@ const GAME_TYPES = [
   { value: 'dice-game', label: 'Dice Game' }
 ];
 
-const SOLO_GAME = { value: 'solitaire', label: 'Solitaire (Klondike 3-Draw)' };
+const SOLO_GAMES = [
+  { value: 'solitaire', label: 'Solitaire (Klondike 3-Draw)' },
+  { value: 'dice-game', label: 'Solo Dice Game' }
+];
 
 function toCid(card) {
   if (!card) return '';
@@ -72,7 +76,7 @@ function DiceCategoryIcon({ icon }) {
   return <span className="dice-category-icon">{icon}</span>;
 }
 
-function DiceGameBoard({ game, user, isMyTurn, act }) {
+function DiceGameBoard({ game, user, isMyTurn, act, isSolo = false, onNewGame }) {
   const orderedPlayers = [...(game.players || [])].sort((a, b) => Number(b.isViewer) - Number(a.isViewer));
   const viewerPanel = orderedPlayers.find((player) => player.isViewer);
   const scoreSections = [
@@ -94,7 +98,7 @@ function DiceGameBoard({ game, user, isMyTurn, act }) {
       <div className="table-header">
         <h3>Dice Game</h3>
         <span className={`turn-pill ${isMyTurn ? 'yours' : ''}`}>
-          {game.gameOver ? 'Final Score' : isMyTurn ? 'Your Turn' : 'Opponent Turn'}
+          {isSolo ? (game.gameOver ? 'Finished' : 'Solo Run') : game.gameOver ? 'Final Score' : isMyTurn ? 'Your Turn' : 'Opponent Turn'}
         </span>
       </div>
 
@@ -227,17 +231,30 @@ function DiceGameBoard({ game, user, isMyTurn, act }) {
         ))}
       </div>
 
-      {viewerPanel && !game.gameOver ? (
+      {viewerPanel ? (
         <div className="controls dice-controls">
-          <button type="button" className="dice-roll-btn" disabled={!canRoll} onClick={() => act({ type: 'roll' })}>
-            {viewerPanel.rollsUsed === 0 ? 'Roll Dice' : `Roll Again (${viewerPanel.rollsRemaining} left)`}
-          </button>
+          {!game.gameOver ? (
+            <button type="button" className="dice-roll-btn" disabled={!canRoll} onClick={() => act({ type: 'roll' })}>
+              {viewerPanel.rollsUsed === 0 ? 'Roll Dice' : `Roll Again (${viewerPanel.rollsRemaining} left)`}
+            </button>
+          ) : null}
+          {isSolo ? (
+            <button type="button" onClick={onNewGame}>
+              New Game
+            </button>
+          ) : null}
         </div>
       ) : null}
 
       {game.gameOver ? (
         <p className="winner-text">
-          {game.winnerUserId === null ? 'Tie game.' : game.winnerUserId === user.id ? 'You win.' : 'Opponent wins.'}
+          {isSolo
+            ? `Final score: ${viewerPanel?.summary.total || 0}.`
+            : game.winnerUserId === null
+              ? 'Tie game.'
+              : game.winnerUserId === user.id
+                ? 'You win.'
+                : 'Opponent wins.'}
         </p>
       ) : null}
     </section>
@@ -256,8 +273,9 @@ export default function App() {
   const [room, setRoom] = useState(null);
   const [game, setGame] = useState(null);
   const [activeGameId, setActiveGameId] = useState(0);
-  const [soloMode, setSoloMode] = useState(false);
+  const [soloMode, setSoloMode] = useState(null);
   const [soloGame, dispatchSolitaire] = useReducer(solitaireReducer, undefined, dealKlondike3);
+  const [soloDiceGame, dispatchSoloDiceGame] = useReducer(soloDiceGameReducer, null);
   const [error, setError] = useState('');
   const [soloFeedback, setSoloFeedback] = useState('');
   const [selectedIds, setSelectedIds] = useState([]);
@@ -351,7 +369,7 @@ export default function App() {
 
   async function createRoom() {
     setError('');
-    setSoloMode(false);
+      setSoloMode(null);
     try {
       const data = await api('/api/rooms', { method: 'POST', token });
       setRoomCode(data.code);
@@ -367,7 +385,7 @@ export default function App() {
 
   async function joinRoom() {
     setError('');
-    setSoloMode(false);
+      setSoloMode(null);
     const code = roomCodeInput.trim().toUpperCase();
     if (!code) return;
     try {
@@ -385,7 +403,7 @@ export default function App() {
   function selectGame(gameType) {
     if (!roomCode) return;
     setError('');
-    setSoloMode(false);
+    setSoloMode(null);
     socket?.emit('game:select', { code: roomCode, gameType });
   }
 
@@ -419,7 +437,7 @@ export default function App() {
     setDragCardId(null);
   }
 
-  function startSolitaire() {
+  function clearToSoloMode(nextSoloMode) {
     setError('');
     if (roomCode) {
       socket?.emit('room:unsubscribe', { code: roomCode });
@@ -429,8 +447,18 @@ export default function App() {
     setRoom(null);
     setGame(null);
     setSelectedIds([]);
-    setSoloMode(true);
+    setSoloFeedback('');
+    setSoloMode(nextSoloMode);
+  }
+
+  function startSolitaire() {
+    clearToSoloMode('solitaire');
     dispatchSolitaire({ type: 'NEW_GAME' });
+  }
+
+  function startSoloDiceGame() {
+    clearToSoloMode('dice-game');
+    dispatchSoloDiceGame({ type: 'new-game', userId: user.id, username: user.username });
   }
 
   function solitaireDraw() {
@@ -495,16 +523,17 @@ export default function App() {
     localStorage.removeItem('roomCode');
     setRoom(null);
     setGame(null);
-    setSoloMode(false);
+    setSoloMode(null);
     setSelectedIds([]);
+    dispatchSoloDiceGame({ type: 'new-game', userId: user.id, username: user.username });
   }
 
   useEffect(() => {
-    if (!soloGame?.invalidMoveReason) return;
+    if (soloMode !== 'solitaire' || !soloGame?.invalidMoveReason) return;
     setSoloFeedback(soloGame.invalidMoveReason);
     const t = setTimeout(() => setSoloFeedback(''), 900);
     return () => clearTimeout(t);
-  }, [soloGame?.invalidMoveTick]);
+  }, [soloMode, soloGame?.invalidMoveTick]);
 
   const selectedRanks = useMemo(() => {
     const cards = game?.yourHand?.filter((c) => selectedIds.includes(c.id)) || [];
@@ -583,7 +612,14 @@ export default function App() {
         {!roomCode ? (
           <section className="lobby-actions">
             <button onClick={createRoom}>Create Room</button>
-            <button onClick={startSolitaire}>{SOLO_GAME.label}</button>
+            {SOLO_GAMES.map((soloGameOption) => (
+              <button
+                key={soloGameOption.value}
+                onClick={soloGameOption.value === 'solitaire' ? startSolitaire : startSoloDiceGame}
+              >
+                {soloGameOption.label}
+              </button>
+            ))}
             <div className="join-row">
               <input
                 value={roomCodeInput}
@@ -619,10 +655,10 @@ export default function App() {
           </section>
         )}
 
-        {soloMode ? (
+        {soloMode === 'solitaire' ? (
           <section className="table-wrap">
             <div className="table-header">
-              <h3>{SOLO_GAME.label}</h3>
+              <h3>{SOLO_GAMES[0].label}</h3>
               <span className={`turn-pill ${soloGame.won ? 'yours' : ''}`}>{soloGame.won ? 'Solved' : 'In Progress'}</span>
             </div>
             <p className="status-text">Classic Klondike 3-card draw: build tableau down alternating colors, foundations A to K by suit.</p>
@@ -720,6 +756,15 @@ export default function App() {
             </div>
             {soloGame.won ? <p className="winner-text">You solved it.</p> : null}
           </section>
+        ) : soloMode === 'dice-game' && soloDiceGame ? (
+          <DiceGameBoard
+            game={soloDiceGame}
+            user={user}
+            isMyTurn
+            act={(action) => dispatchSoloDiceGame(action)}
+            isSolo
+            onNewGame={() => dispatchSoloDiceGame({ type: 'new-game', userId: user.id, username: user.username })}
+          />
         ) : game?.gameType === 'dice-game' ? (
           <DiceGameBoard game={game} user={user} isMyTurn={isMyTurn} act={act} />
         ) : game ? (
