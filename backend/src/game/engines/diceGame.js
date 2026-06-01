@@ -3,6 +3,7 @@ const MAX_ROLLS = 3;
 const UPPER_BONUS_THRESHOLD = 63;
 const UPPER_BONUS_SCORE = 35;
 const EXTRA_FIVE_KIND_BONUS = 100;
+const MAX_EXTRA_FIVE_KIND_BONUSES = 3;
 
 const CATEGORY_ORDER = [
   'ones',
@@ -50,7 +51,8 @@ function rollDice(count) {
 function emptyScorecard() {
   return {
     categories: Object.fromEntries(CATEGORY_ORDER.map((key) => [key, null])),
-    fiveKindBonus: 0
+    fiveKindBonus: 0,
+    fiveKindBonusCount: 0
   };
 }
 
@@ -148,12 +150,16 @@ function summarizeScorecard(scorecard) {
   );
   const total = upperSubtotal + upperBonus + lowerSubtotal + scorecard.fiveKindBonus;
   const filledCount = CATEGORY_ORDER.filter((key) => scorecard.categories[key] !== null).length;
+  const fiveKindBonusAvailable = scorecard.categories.fiveKind === 50;
 
   return {
     upperSubtotal,
     upperBonus,
     lowerSubtotal,
     fiveKindBonus: scorecard.fiveKindBonus,
+    fiveKindBonusCount: scorecard.fiveKindBonusCount,
+    fiveKindBonusRemaining: Math.max(0, MAX_EXTRA_FIVE_KIND_BONUSES - scorecard.fiveKindBonusCount),
+    fiveKindBonusAvailable,
     total,
     filledCount
   };
@@ -222,6 +228,13 @@ function previewScores(scorecard, dice, rollsUsed) {
     previews[key] = scoreCategory(dice, key, scorecard);
   }
   return previews;
+}
+
+function canAwardExtraFiveKindBonus(scorecard, dice) {
+  return (
+    isJokerRoll(scorecard, dice) &&
+    scorecard.fiveKindBonusCount < MAX_EXTRA_FIVE_KIND_BONUSES
+  );
 }
 
 export const diceGameEngine = {
@@ -307,8 +320,9 @@ export const diceGameEngine = {
         return { ok: false, error: 'This roll must be scored in the matching upper category' };
       }
 
-      if (isJokerRoll(scorecard, state.turn.dice) && category !== 'fiveKind') {
+      if (canAwardExtraFiveKindBonus(scorecard, state.turn.dice) && category !== 'fiveKind') {
         scorecard.fiveKindBonus += EXTRA_FIVE_KIND_BONUS;
+        scorecard.fiveKindBonusCount += 1;
       }
 
       const scoredValue = scoreCategory(state.turn.dice, category, scorecard);
@@ -338,6 +352,7 @@ export const diceGameEngine = {
       winnerUserId: state.winnerUserId,
       message: state.message,
       maxRolls: MAX_ROLLS,
+      maxFiveKindBonuses: MAX_EXTRA_FIVE_KIND_BONUSES,
       openingTotals: state.openingTotals,
       players: state.playerOrder.map((id) => {
         const scorecard = state.scorecards[id];
@@ -359,6 +374,7 @@ export const diceGameEngine = {
       }),
       yourPreviewScores: previewScores(state.scorecards[userId], state.turn.dice, state.turn.rollsUsed),
       forcedCategory: hasMatchingUpperForced(state.scorecards[userId], state.turn.dice),
+      extraFiveKindBonusReady: canAwardExtraFiveKindBonus(state.scorecards[userId], state.turn.dice),
       categoryOrder: CATEGORY_ORDER
     };
   }

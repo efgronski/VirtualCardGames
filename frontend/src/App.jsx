@@ -97,12 +97,20 @@ function DiceGameBoard({ game, user, isMyTurn, act }) {
       <p className="status-text">
         {game.message}
         {game.forcedCategory ? ' Bonus 5-of-a-kind: the matching upper box must be used.' : ''}
+        {game.extraFiveKindBonusReady ? ' Extra 5-of-a-kind bonus armed: scoring this roll will add 100 points.' : ''}
       </p>
 
       <div className="metrics">
         {viewerPanel ? <div className="metric">Rolls Left: {viewerPanel.rollsRemaining}</div> : null}
         {viewerPanel ? <div className="metric">Upper Bonus Goal: {viewerPanel.summary.upperSubtotal}/63</div> : null}
-        {viewerPanel ? <div className="metric">5 of a Kind Bonus: {viewerPanel.summary.fiveKindBonus}</div> : null}
+        {viewerPanel ? (
+          <div className="metric">
+            5 of a Kind Bonus:{' '}
+            {viewerPanel.summary.fiveKindBonusAvailable
+              ? `${viewerPanel.summary.fiveKindBonusCount}/${game.maxFiveKindBonuses} used (${viewerPanel.summary.fiveKindBonus} pts)`
+              : 'Locked until first 5 of a Kind scores 50'}
+          </div>
+        ) : null}
         {game.openingTotals ? (
           <div className="metric">
             Opening Roll: You {game.openingTotals[user.id] || 0} - Opp{' '}
