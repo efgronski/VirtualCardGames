@@ -1,11 +1,13 @@
 import { ginRummyEngine } from './engines/ginRummy.js';
 import { shitheadEngine } from './engines/shithead.js';
 import { germanWhistEngine } from './engines/germanWhist.js';
+import { diceGameEngine } from './engines/diceGame.js';
 
 const GAME_MAP = {
   'gin-rummy': ginRummyEngine,
   shithead: shitheadEngine,
-  'german-whist': germanWhistEngine
+  'german-whist': germanWhistEngine,
+  'dice-game': diceGameEngine
 };
 
 export const GAME_TYPES = Object.keys(GAME_MAP);

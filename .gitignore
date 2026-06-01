@@ -9,3 +9,6 @@ backend/data.sqlite*
 frontend/dist
 .DS_Store
 tmp
+/package-lock.json
+/Card Game Rules.pdf
+/yahtzee_rules.pdf

@@ -2,11 +2,13 @@ import { useEffect, useMemo, useReducer, useState } from 'react';
 import { api } from './api';
 import { connectSocket } from './socket';
 import { solitaireReducer, dealKlondike3 } from './solitaire/klondike';
+import { DICE_GAME_CATEGORIES } from './diceGame';
 
 const GAME_TYPES = [
   { value: 'gin-rummy', label: 'Gin Rummy' },
   { value: 'shithead', label: 'Shithead' },
-  { value: 'german-whist', label: 'German Whist' }
+  { value: 'german-whist', label: 'German Whist' },
+  { value: 'dice-game', label: 'Dice Game' }
 ];
 
 const SOLO_GAME = { value: 'solitaire', label: 'Solitaire (Klondike 3-Draw)' };
@@ -37,6 +39,186 @@ function BackStack({ count }) {
         </div>
       ))}
     </div>
+  );
+}
+
+const DIE_PIPS = {
+  1: ['center'],
+  2: ['top-left', 'bottom-right'],
+  3: ['top-left', 'center', 'bottom-right'],
+  4: ['top-left', 'top-right', 'bottom-left', 'bottom-right'],
+  5: ['top-left', 'top-right', 'center', 'bottom-left', 'bottom-right'],
+  6: ['top-left', 'top-right', 'mid-left', 'mid-right', 'bottom-left', 'bottom-right']
+};
+
+function DieFace({ value, held = false }) {
+  const pips = DIE_PIPS[value] || [];
+  return (
+    <div className={`die-face ${held ? 'held' : ''} ${value ? '' : 'empty'}`}>
+      {value ? (
+        <>
+          {pips.map((pip) => (
+            <span key={pip} className={`die-pip ${pip}`}></span>
+          ))}
+          <span className="die-face-value">{value}</span>
+        </>
+      ) : (
+        <span className="die-face-placeholder">Roll</span>
+      )}
+    </div>
+  );
+}
+
+function DiceCategoryIcon({ icon }) {
+  return <span className="dice-category-icon">{icon}</span>;
+}
+
+function DiceGameBoard({ game, user, isMyTurn, act }) {
+  const orderedPlayers = [...(game.players || [])].sort((a, b) => Number(b.isViewer) - Number(a.isViewer));
+  const viewerPanel = orderedPlayers.find((player) => player.isViewer);
+  const canRoll = Boolean(viewerPanel && isMyTurn && !game.gameOver && viewerPanel.rollsRemaining > 0);
+  const canToggleHold = Boolean(
+    viewerPanel &&
+      isMyTurn &&
+      !game.gameOver &&
+      viewerPanel.rollsUsed > 0 &&
+      viewerPanel.rollsRemaining > 0
+  );
+  const canScore = Boolean(viewerPanel && isMyTurn && !game.gameOver && viewerPanel.rollsUsed > 0);
+
+  return (
+    <section className="table-wrap dice-game-wrap">
+      <div className="table-header">
+        <h3>Dice Game</h3>
+        <span className={`turn-pill ${isMyTurn ? 'yours' : ''}`}>
+          {game.gameOver ? 'Final Score' : isMyTurn ? 'Your Turn' : 'Opponent Turn'}
+        </span>
+      </div>
+
+      <p className="status-text">
+        {game.message}
+        {game.forcedCategory ? ' Bonus 5-of-a-kind: the matching upper box must be used.' : ''}
+      </p>
+
+      <div className="metrics">
+        {viewerPanel ? <div className="metric">Rolls Left: {viewerPanel.rollsRemaining}</div> : null}
+        {viewerPanel ? <div className="metric">Upper Bonus Goal: {viewerPanel.summary.upperSubtotal}/63</div> : null}
+        {viewerPanel ? <div className="metric">5 of a Kind Bonus: {viewerPanel.summary.fiveKindBonus}</div> : null}
+        {game.openingTotals ? (
+          <div className="metric">
+            Opening Roll: You {game.openingTotals[user.id] || 0} - Opp{' '}
+            {Object.entries(game.openingTotals).find(([id]) => Number(id) !== user.id)?.[1] || 0}
+          </div>
+        ) : null}
+      </div>
+
+      <div className="dice-board-grid">
+        {orderedPlayers.map((player) => (
+          <section
+            key={player.userId}
+            className={`dice-player-panel ${player.isViewer ? 'player-red' : 'player-blue'} ${player.isCurrentTurn ? 'active' : ''}`}
+          >
+            <div className="dice-player-header">
+              <div>
+                <h4>{player.isViewer ? `${player.username} (You)` : player.username}</h4>
+                <p className="dice-player-status">
+                  {player.isCurrentTurn
+                    ? player.rollsUsed
+                      ? `${player.rollsRemaining} roll${player.rollsRemaining === 1 ? '' : 's'} left`
+                      : 'Ready to roll'
+                    : `Completed ${player.summary.filledCount}/13 categories`}
+                </p>
+              </div>
+              <div className="dice-total-chip">Total {player.summary.total}</div>
+            </div>
+
+            <div className="dice-score-list">
+              {DICE_GAME_CATEGORIES.map((category) => {
+                const savedScore = player.categories[category.key];
+                const previewScore = player.isViewer ? game.yourPreviewScores?.[category.key] : undefined;
+                const forced = player.isViewer && game.forcedCategory === category.key;
+                const selectable =
+                  player.isViewer &&
+                  canScore &&
+                  savedScore === null &&
+                  (game.forcedCategory === null || forced);
+
+                return (
+                  <button
+                    key={category.key}
+                    type="button"
+                    disabled={!selectable}
+                    className={`dice-score-row ${savedScore !== null ? 'locked' : ''} ${selectable ? 'selectable' : ''} ${
+                      forced ? 'forced' : ''
+                    }`}
+                    onClick={() => act({ type: 'score', category: category.key })}
+                  >
+                    <div className="dice-score-meta">
+                      <DiceCategoryIcon icon={category.icon} />
+                      <span>{category.label}</span>
+                    </div>
+                    <span className="dice-score-value">
+                      {savedScore !== null ? savedScore : previewScore ?? '--'}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="dice-summary-grid">
+              <div className="dice-summary-card">
+                <span>Upper</span>
+                <strong>{player.summary.upperSubtotal}</strong>
+              </div>
+              <div className="dice-summary-card">
+                <span>Bonus</span>
+                <strong>{player.summary.upperBonus}</strong>
+              </div>
+              <div className="dice-summary-card">
+                <span>Lower</span>
+                <strong>{player.summary.lowerSubtotal}</strong>
+              </div>
+              <div className="dice-summary-card">
+                <span>5K Bonus</span>
+                <strong>{player.summary.fiveKindBonus}</strong>
+              </div>
+            </div>
+
+            <div className="dice-tray">
+              {player.dice.map((value, index) => {
+                const interactive = player.isViewer && canToggleHold;
+                return (
+                  <button
+                    key={`${player.userId}-die-${index}`}
+                    type="button"
+                    disabled={!interactive}
+                    className={`die-button ${player.held[index] ? 'held' : ''}`}
+                    onClick={() => act({ type: 'toggle-hold', index })}
+                  >
+                    <DieFace value={value} held={player.held[index]} />
+                    <span className="die-hold-label">{player.held[index] ? 'Held' : interactive ? 'Tap to hold' : 'Open'}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        ))}
+      </div>
+
+      {viewerPanel && !game.gameOver ? (
+        <div className="controls dice-controls">
+          <button type="button" className="dice-roll-btn" disabled={!canRoll} onClick={() => act({ type: 'roll' })}>
+            {viewerPanel.rollsUsed === 0 ? 'Roll Dice' : `Roll Again (${viewerPanel.rollsRemaining} left)`}
+          </button>
+        </div>
+      ) : null}
+
+      {game.gameOver ? (
+        <p className="winner-text">
+          {game.winnerUserId === null ? 'Tie game.' : game.winnerUserId === user.id ? 'You win.' : 'Opponent wins.'}
+        </p>
+      ) : null}
+    </section>
   );
 }
 
@@ -515,6 +697,8 @@ export default function App() {
             </div>
             {soloGame.won ? <p className="winner-text">You solved it.</p> : null}
           </section>
+        ) : game?.gameType === 'dice-game' ? (
+          <DiceGameBoard game={game} user={user} isMyTurn={isMyTurn} act={act} />
         ) : game ? (
           <section className="table-wrap">
             <div className="table-header">
