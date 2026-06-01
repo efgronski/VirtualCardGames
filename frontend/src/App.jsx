@@ -149,9 +149,9 @@ function DiceGameBoard({ game, user, isMyTurn, act }) {
                     key={category.key}
                     type="button"
                     disabled={!selectable}
-                    className={`dice-score-row ${savedScore !== null ? 'locked' : ''} ${selectable ? 'selectable' : ''} ${
-                      forced ? 'forced' : ''
-                    }`}
+                    className={`dice-score-row ${savedScore !== null ? 'locked complete' : 'open'} ${
+                      selectable ? 'selectable' : ''
+                    } ${forced ? 'forced' : ''}`}
                     onClick={() => act({ type: 'score', category: category.key })}
                   >
                     <div className="dice-score-meta">
