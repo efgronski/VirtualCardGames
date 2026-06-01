@@ -75,6 +75,10 @@ function DiceCategoryIcon({ icon }) {
 function DiceGameBoard({ game, user, isMyTurn, act }) {
   const orderedPlayers = [...(game.players || [])].sort((a, b) => Number(b.isViewer) - Number(a.isViewer));
   const viewerPanel = orderedPlayers.find((player) => player.isViewer);
+  const scoreSections = [
+    { key: 'upper', label: 'Upper Section', categories: DICE_GAME_CATEGORIES.slice(0, 6) },
+    { key: 'lower', label: 'Lower Section', categories: DICE_GAME_CATEGORIES.slice(6) }
+  ];
   const canRoll = Boolean(viewerPanel && isMyTurn && !game.gameOver && viewerPanel.rollsRemaining > 0);
   const canToggleHold = Boolean(
     viewerPanel &&
@@ -141,37 +145,46 @@ function DiceGameBoard({ game, user, isMyTurn, act }) {
               <div className="dice-total-chip">Total {player.summary.total}</div>
             </div>
 
-            <div className="dice-score-list">
-              {DICE_GAME_CATEGORIES.map((category) => {
-                const savedScore = player.categories[category.key];
-                const previewScore = player.isViewer ? game.yourPreviewScores?.[category.key] : undefined;
-                const forced = player.isViewer && game.forcedCategory === category.key;
-                const selectable =
-                  player.isViewer &&
-                  canScore &&
-                  savedScore === null &&
-                  (game.forcedCategory === null || forced);
+            <div className="dice-score-sections">
+              {scoreSections.map((section) => (
+                <section key={section.key} className="dice-score-section">
+                  <div className="dice-score-section-header">
+                    <span>{section.label}</span>
+                  </div>
+                  <div className="dice-score-list">
+                    {section.categories.map((category) => {
+                      const savedScore = player.categories[category.key];
+                      const previewScore = player.isViewer ? game.yourPreviewScores?.[category.key] : undefined;
+                      const forced = player.isViewer && game.forcedCategory === category.key;
+                      const selectable =
+                        player.isViewer &&
+                        canScore &&
+                        savedScore === null &&
+                        (game.forcedCategory === null || forced);
 
-                return (
-                  <button
-                    key={category.key}
-                    type="button"
-                    disabled={!selectable}
-                    className={`dice-score-row ${savedScore !== null ? 'locked complete' : 'open'} ${
-                      selectable ? 'selectable' : ''
-                    } ${forced ? 'forced' : ''}`}
-                    onClick={() => act({ type: 'score', category: category.key })}
-                  >
-                    <div className="dice-score-meta">
-                      <DiceCategoryIcon icon={category.icon} />
-                      <span>{category.label}</span>
-                    </div>
-                    <span className="dice-score-value">
-                      {savedScore !== null ? savedScore : previewScore ?? '--'}
-                    </span>
-                  </button>
-                );
-              })}
+                      return (
+                        <button
+                          key={category.key}
+                          type="button"
+                          disabled={!selectable}
+                          className={`dice-score-row ${savedScore !== null ? 'locked complete' : 'open'} ${
+                            selectable ? 'selectable' : ''
+                          } ${forced ? 'forced' : ''}`}
+                          onClick={() => act({ type: 'score', category: category.key })}
+                        >
+                          <div className="dice-score-meta">
+                            <DiceCategoryIcon icon={category.icon} />
+                            <span>{category.label}</span>
+                          </div>
+                          <span className="dice-score-value">
+                            {savedScore !== null ? savedScore : previewScore ?? '--'}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              ))}
             </div>
 
             <div className="dice-summary-grid">
