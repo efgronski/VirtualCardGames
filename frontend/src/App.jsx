@@ -422,6 +422,7 @@ export default function App() {
   const isMyTurn = game?.turnUserId === user?.id;
   const canReorderHand = game?.gameType === 'gin-rummy' || game?.gameType === 'german-whist';
   const availableGameTypes = GAME_TYPES.filter((gameType) => (room?.gameTypes || GAME_TYPES.map((g) => g.value)).includes(gameType.value));
+  const isDiceGameView = soloMode === 'dice-game' || game?.gameType === 'dice-game';
   const activeInviteCode = roomCode || pendingInviteCode || roomCodeInput;
   const inviteLink =
     typeof window === 'undefined' || !activeInviteCode
@@ -721,8 +722,8 @@ export default function App() {
   }
 
   return (
-    <main className="page">
-      <section className="panel board-panel">
+    <main className={`page ${isDiceGameView ? 'dice-page' : ''}`}>
+      <section className={`panel board-panel ${isDiceGameView ? 'mobile-dice-shell' : ''}`}>
         <div className="top-row">
           <h1>Virtual Card Games</h1>
           <div className="top-actions">
@@ -774,7 +775,7 @@ export default function App() {
               </div>
             </section>
           ) : (
-            <section>
+            <section className="room-shell">
               <div className="room-heading">
                 <h2>Room {roomCode}</h2>
                 <div className="room-link-actions">
