@@ -919,6 +919,8 @@ button:disabled {
   }
 
   .dice-page {
+    height: 100dvh;
+    max-height: 100dvh;
     overflow: hidden;
     padding: 0.2rem;
   }
@@ -941,14 +943,21 @@ button:disabled {
   }
 
   .mobile-dice-shell {
+    position: relative;
     min-height: calc(100dvh - 0.4rem);
     max-height: calc(100dvh - 0.4rem);
-    padding: 0.45rem;
+    padding: 0.25rem 0.35rem 0.35rem;
   }
 
   .mobile-dice-shell .board-content-shell {
     overflow: hidden;
     padding-right: 0;
+  }
+
+  .mobile-dice-shell .board-content-shell > .dice-game-wrap {
+    flex: 1 1 auto;
+    min-height: 0;
+    margin-top: 0;
   }
 
   .top-row {
@@ -968,10 +977,14 @@ button:disabled {
   }
 
   .mobile-dice-shell .top-row {
+    position: absolute;
+    top: 0.2rem;
+    right: 0.25rem;
     justify-content: flex-end;
     align-items: center;
     gap: 0.25rem;
-    margin-bottom: 0.1rem;
+    margin: 0;
+    z-index: 3;
   }
 
   .mobile-dice-shell .top-row h1,
@@ -987,8 +1000,12 @@ button:disabled {
 
   .mobile-dice-shell .user-chip,
   .mobile-dice-shell .top-actions .link {
-    font-size: 0.72rem;
-    padding: 0.2rem 0.45rem;
+    font-size: 0.66rem;
+    padding: 0.12rem 0.32rem;
+  }
+
+  .mobile-dice-shell .user-chip {
+    display: none;
   }
 
   .lobby-actions,
@@ -1039,8 +1056,8 @@ button:disabled {
   }
 
   .mobile-dice-shell .table-wrap {
-    margin-top: 0.2rem;
-    padding: 0.5rem;
+    margin-top: 0;
+    padding: 0.3rem 0.45rem 0.4rem;
   }
 
   .table-header {
@@ -1066,12 +1083,12 @@ button:disabled {
   }
 
   .dice-game-wrap .table-header h3 {
-    font-size: 1rem;
+    font-size: 0.9rem;
   }
 
   .dice-game-wrap .turn-pill {
-    padding: 0.2rem 0.5rem;
-    font-size: 0.78rem;
+    padding: 0.14rem 0.38rem;
+    font-size: 0.72rem;
   }
 
   .dice-game-wrap .status-text {
@@ -1092,7 +1109,7 @@ button:disabled {
   }
 
   .dice-player-panel {
-    padding: 0.55rem;
+    padding: 0.42rem;
   }
 
   .dice-player-header {
@@ -1101,16 +1118,16 @@ button:disabled {
   }
 
   .dice-player-header h4 {
-    font-size: 0.98rem;
+    font-size: 0.9rem;
   }
 
   .dice-player-status {
-    font-size: 0.8rem;
+    font-size: 0.74rem;
   }
 
   .dice-total-chip {
-    padding: 0.28rem 0.55rem;
-    font-size: 0.82rem;
+    padding: 0.2rem 0.4rem;
+    font-size: 0.72rem;
   }
 
   .dice-viewer-panel {
@@ -1118,9 +1135,14 @@ button:disabled {
     overflow: hidden;
   }
 
+  .dice-viewer-summary {
+    display: none;
+  }
+
   .dice-viewer-panel .dice-player-detail {
     flex: 1 1 auto;
     overflow: hidden;
+    gap: 0.2rem;
   }
 
   .dice-viewer-panel .dice-score-region {
@@ -1137,7 +1159,7 @@ button:disabled {
 
   .dice-viewer-panel .dice-player-footer {
     order: 2;
-    gap: 0.4rem;
+    gap: 0.25rem;
   }
 
   .dice-viewer-panel .dice-summary-grid {
@@ -1176,9 +1198,9 @@ button:disabled {
   }
 
   .dice-score-row {
-    min-height: 50px;
-    padding: 0.48rem 0.52rem;
-    border-radius: 12px;
+    min-height: 44px;
+    padding: 0.38rem 0.42rem;
+    border-radius: 10px;
   }
 
   .dice-score-meta {
@@ -1186,17 +1208,17 @@ button:disabled {
   }
 
   .dice-score-meta span:last-child {
-    font-size: 0.8rem;
+    font-size: 0.74rem;
   }
 
   .dice-category-icon {
-    width: 30px;
-    height: 30px;
-    border-radius: 9px;
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
   }
 
   .dice-score-value {
-    font-size: 0.95rem;
+    font-size: 0.88rem;
   }
 
   .dice-summary-card span {
@@ -1272,9 +1294,9 @@ button:disabled {
   }
 
   .dice-controls {
-    margin-top: 0.4rem;
-    padding-top: 0.2rem;
-    gap: 0.35rem;
+    margin-top: 0.22rem;
+    padding-top: 0.12rem;
+    gap: 0.28rem;
   }
 
   .dice-controls > * {
