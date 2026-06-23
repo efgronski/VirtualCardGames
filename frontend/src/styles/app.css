@@ -186,6 +186,43 @@ button:disabled {
   gap: 0.5rem;
 }
 
+.room-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+}
+
+.room-heading h2 {
+  margin-bottom: 0;
+}
+
+.room-link-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.invite-banner,
+.invite-feedback {
+  border-radius: 12px;
+  padding: 0.55rem 0.7rem;
+  margin-bottom: 0.75rem;
+}
+
+.invite-banner {
+  background: rgba(255, 200, 87, 0.12);
+  border: 1px solid rgba(255, 200, 87, 0.28);
+  color: #ffe7a8;
+}
+
+.invite-feedback {
+  background: rgba(82, 196, 26, 0.12);
+  border: 1px solid rgba(82, 196, 26, 0.24);
+  color: #c8f5b0;
+}
+
 .online {
   color: var(--ok);
 }
@@ -917,7 +954,8 @@ button:disabled {
   .lobby-actions,
   .join-row,
   .controls,
-  .game-select {
+  .game-select,
+  .room-link-actions {
     width: 100%;
   }
 
@@ -945,8 +983,15 @@ button:disabled {
 
   .join-row > *,
   .controls > *,
-  .game-select > * {
+  .game-select > *,
+  .room-link-actions > * {
     flex: 1 1 140px;
+  }
+
+  .invite-banner,
+  .invite-feedback {
+    font-size: 0.84rem;
+    margin-bottom: 0.6rem;
   }
 
   .table-wrap {

@@ -17,6 +17,47 @@ const SOLO_GAMES = [
   { value: 'dice-game', label: 'Solo Dice Game' }
 ];
 
+const INVITE_QUERY_PARAM = 'room';
+
+function normalizeRoomCode(code) {
+  return String(code || '').trim().toUpperCase();
+}
+
+function getInviteCodeFromLocation() {
+  if (typeof window === 'undefined') return '';
+  const params = new URLSearchParams(window.location.search);
+  return normalizeRoomCode(params.get(INVITE_QUERY_PARAM));
+}
+
+function setInviteCodeInUrl(code) {
+  if (typeof window === 'undefined') return;
+  const url = new URL(window.location.href);
+  const normalized = normalizeRoomCode(code);
+  if (normalized) {
+    url.searchParams.set(INVITE_QUERY_PARAM, normalized);
+  } else {
+    url.searchParams.delete(INVITE_QUERY_PARAM);
+  }
+  window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+}
+
+async function copyText(text) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const textArea = document.createElement('textarea');
+  textArea.value = text;
+  textArea.setAttribute('readonly', '');
+  textArea.style.position = 'absolute';
+  textArea.style.left = '-9999px';
+  document.body.appendChild(textArea);
+  textArea.select();
+  document.execCommand('copy');
+  document.body.removeChild(textArea);
+}
+
 function toCid(card) {
   if (!card) return '';
   const rank = card.rank === '10' ? 'T' : card.rank;
@@ -284,13 +325,14 @@ function DiceGameBoard({ game, user, isMyTurn, act, isSolo = false, onNewGame })
 }
 
 export default function App() {
+  const initialInviteCode = getInviteCodeFromLocation();
   const [username, setUsername] = useState('');
   const [token, setToken] = useState(localStorage.getItem('token') || '');
   const [user, setUser] = useState(() => {
     const raw = localStorage.getItem('user');
     return raw ? JSON.parse(raw) : null;
   });
-  const [roomCodeInput, setRoomCodeInput] = useState('');
+  const [roomCodeInput, setRoomCodeInput] = useState(initialInviteCode);
   const [roomCode, setRoomCode] = useState(localStorage.getItem('roomCode') || '');
   const [room, setRoom] = useState(null);
   const [game, setGame] = useState(null);
@@ -304,7 +346,9 @@ export default function App() {
   const [knockDiscardMode, setKnockDiscardMode] = useState(false);
   const [handOrders, setHandOrders] = useState({});
   const [dragCardId, setDragCardId] = useState(null);
-  const [showMobileLobbyMenu, setShowMobileLobbyMenu] = useState(false);
+  const [showMobileLobbyMenu, setShowMobileLobbyMenu] = useState(Boolean(initialInviteCode));
+  const [pendingInviteCode, setPendingInviteCode] = useState(initialInviteCode);
+  const [inviteFeedback, setInviteFeedback] = useState('');
   const [socket, setSocket] = useState(null);
 
   useEffect(() => {
@@ -316,6 +360,7 @@ export default function App() {
       if (payload?.code) {
         setRoomCode(payload.code);
         localStorage.setItem('roomCode', payload.code);
+        setInviteCodeInUrl(payload.code);
       }
       if (payload?.gameId != null) {
         setActiveGameId(payload.gameId);
@@ -369,9 +414,19 @@ export default function App() {
     socket.emit('game:snapshot', { code: roomCode, gameId: activeGameId || undefined });
   }, [socket, roomCode]);
 
+  useEffect(() => {
+    if (!token || !pendingInviteCode || roomCode) return;
+    joinRoom(pendingInviteCode, { fromInvite: true });
+  }, [token, pendingInviteCode, roomCode]);
+
   const isMyTurn = game?.turnUserId === user?.id;
   const canReorderHand = game?.gameType === 'gin-rummy' || game?.gameType === 'german-whist';
   const availableGameTypes = GAME_TYPES.filter((gameType) => (room?.gameTypes || GAME_TYPES.map((g) => g.value)).includes(gameType.value));
+  const activeInviteCode = roomCode || pendingInviteCode || roomCodeInput;
+  const inviteLink =
+    typeof window === 'undefined' || !activeInviteCode
+      ? ''
+      : `${window.location.origin}${window.location.pathname}?${INVITE_QUERY_PARAM}=${activeInviteCode}`;
 
   async function handleAuth(e) {
     e.preventDefault();
@@ -398,6 +453,8 @@ export default function App() {
       setRoomCode(data.code);
       localStorage.setItem('roomCode', data.code);
       setRoomCodeInput(data.code);
+      setInviteCodeInUrl(data.code);
+      setInviteFeedback('');
       const roomData = await api(`/api/rooms/${data.code}`, { token });
       setRoom(roomData);
       socket?.emit('room:subscribe', { code: data.code });
@@ -406,20 +463,62 @@ export default function App() {
     }
   }
 
-  async function joinRoom() {
+  async function joinRoom(codeValue = roomCodeInput, { fromInvite = false } = {}) {
     setError('');
-      setSoloMode(null);
-    const code = roomCodeInput.trim().toUpperCase();
+    setSoloMode(null);
+    const code = normalizeRoomCode(codeValue);
     if (!code) return;
     try {
       await api('/api/rooms/join', { method: 'POST', token, body: { code } });
       setRoomCode(code);
       localStorage.setItem('roomCode', code);
+      setRoomCodeInput(code);
+      setPendingInviteCode('');
+      setInviteCodeInUrl(code);
+      setInviteFeedback(fromInvite ? `Joined room ${code} from invite.` : '');
       const roomData = await api(`/api/rooms/${code}`, { token });
       setRoom(roomData);
       socket?.emit('room:subscribe', { code });
     } catch (err) {
+      if (fromInvite) {
+        setPendingInviteCode('');
+        setRoomCodeInput(code);
+        setShowMobileLobbyMenu(true);
+      }
       setError(err.message);
+    }
+  }
+
+  async function shareInviteLink() {
+    if (!inviteLink) return;
+    setInviteFeedback('');
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: 'Join my card game',
+          text: `Join my room with code ${activeInviteCode}.`,
+          url: inviteLink
+        });
+        setInviteFeedback('Invite link shared.');
+        return;
+      }
+
+      await copyText(inviteLink);
+      setInviteFeedback('Invite link copied.');
+    } catch (err) {
+      if (err?.name === 'AbortError') return;
+      setError('Unable to share invite link right now.');
+    }
+  }
+
+  async function copyInviteLink() {
+    if (!inviteLink) return;
+    setInviteFeedback('');
+    try {
+      await copyText(inviteLink);
+      setInviteFeedback('Invite link copied.');
+    } catch {
+      setError('Unable to copy invite link right now.');
     }
   }
 
@@ -467,6 +566,7 @@ export default function App() {
     }
     setRoomCode('');
     localStorage.removeItem('roomCode');
+    setInviteCodeInUrl('');
     setRoom(null);
     setGame(null);
     setSelectedIds([]);
@@ -544,6 +644,7 @@ export default function App() {
     setUser(null);
     setRoomCode('');
     localStorage.removeItem('roomCode');
+    setInviteCodeInUrl('');
     setRoom(null);
     setGame(null);
     setSoloMode(null);
@@ -646,6 +747,12 @@ export default function App() {
                 </button>
               </div>
 
+              {pendingInviteCode && !roomCode ? (
+                <div className="invite-banner">
+                  <strong>Invite ready:</strong> Room {pendingInviteCode}
+                </div>
+              ) : null}
+
               <div className={`lobby-actions ${showMobileLobbyMenu ? 'mobile-open' : ''}`}>
                 <button onClick={createRoom}>Create Room</button>
                 {SOLO_GAMES.map((soloGameOption) => (
@@ -668,7 +775,18 @@ export default function App() {
             </section>
           ) : (
             <section>
-              <h2>Room {roomCode}</h2>
+              <div className="room-heading">
+                <h2>Room {roomCode}</h2>
+                <div className="room-link-actions">
+                  <button type="button" onClick={shareInviteLink}>
+                    Share Invite
+                  </button>
+                  <button type="button" onClick={copyInviteLink}>
+                    Copy Link
+                  </button>
+                </div>
+              </div>
+              {inviteFeedback ? <p className="invite-feedback">{inviteFeedback}</p> : null}
               <div className="players">
                 {(room?.players || []).map((p) => (
                   <div key={p.userId} className="player-pill">
