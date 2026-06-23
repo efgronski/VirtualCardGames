@@ -763,22 +763,36 @@ export default function App() {
               ) : null}
 
               <div className={`lobby-actions ${showMobileLobbyMenu ? 'mobile-open' : ''}`}>
-                <button onClick={createRoom}>Create Room</button>
-                {SOLO_GAMES.map((soloGameOption) => (
-                  <button
-                    key={soloGameOption.value}
-                    onClick={soloGameOption.value === 'solitaire' ? startSolitaire : startSoloDiceGame}
-                  >
-                    {soloGameOption.label}
-                  </button>
-                ))}
-                <div className="join-row">
-                  <input
-                    value={roomCodeInput}
-                    onChange={(e) => setRoomCodeInput(e.target.value.toUpperCase())}
-                    placeholder="Join code"
-                  />
-                  <button onClick={joinRoom}>Join Room</button>
+                <div className="menu-group">
+                  <div className="menu-group-label">Play</div>
+                  <div className="menu-tab-grid">
+                    <button className="menu-tab-btn" onClick={createRoom}>
+                      Create Room
+                    </button>
+                    {SOLO_GAMES.map((soloGameOption) => (
+                      <button
+                        key={soloGameOption.value}
+                        className={`menu-tab-btn ${soloMode === soloGameOption.value ? 'active' : ''}`}
+                        onClick={soloGameOption.value === 'solitaire' ? startSolitaire : startSoloDiceGame}
+                      >
+                        {soloGameOption.value === 'solitaire' ? 'Solitaire' : 'Solo Dice'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="menu-group">
+                  <div className="menu-group-label">Join Room</div>
+                  <div className="join-row compact-join-row">
+                    <input
+                      value={roomCodeInput}
+                      onChange={(e) => setRoomCodeInput(e.target.value.toUpperCase())}
+                      placeholder="Join code"
+                    />
+                    <button className="menu-join-btn" onClick={joinRoom}>
+                      Join
+                    </button>
+                  </div>
                 </div>
               </div>
             </section>

@@ -1010,6 +1010,8 @@ button:disabled {
     order: 3;
     justify-content: stretch;
     margin: 0.22rem 0 0;
+    flex-direction: column;
+    gap: 0.22rem;
   }
 
   .mobile-lobby-toggle {
@@ -1048,6 +1050,70 @@ button:disabled {
 
   .lobby-actions.mobile-open {
     display: flex;
+    flex-direction: column;
+    gap: 0.32rem;
+    padding: 0.38rem;
+    border-radius: 12px;
+    background: rgba(7, 10, 14, 0.88);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    box-shadow: 0 14px 30px rgba(0, 0, 0, 0.25);
+  }
+
+  .menu-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.24rem;
+  }
+
+  .menu-group-label {
+    font-size: 0.64rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.62);
+    font-weight: 800;
+  }
+
+  .menu-tab-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.22rem;
+  }
+
+  .menu-tab-btn,
+  .menu-join-btn {
+    padding: 0.34rem 0.38rem;
+    min-height: 0;
+    border-radius: 10px;
+    font-size: 0.7rem;
+    line-height: 1.1;
+  }
+
+  .menu-tab-btn {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.06));
+    color: #f7f4ea;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+  }
+
+  .menu-tab-btn.active {
+    background: linear-gradient(180deg, rgba(255, 214, 10, 0.32), rgba(128, 87, 0, 0.34));
+    color: #fff5cf;
+    border-color: rgba(255, 221, 87, 0.72);
+    box-shadow: none;
+  }
+
+  .compact-join-row {
+    gap: 0.22rem;
+  }
+
+  .compact-join-row input {
+    min-width: 0;
+    padding: 0.34rem 0.42rem;
+    font-size: 0.74rem;
+  }
+
+  .menu-join-btn {
+    flex: 0 0 auto;
+    min-width: 72px;
   }
 
   .join-row > *,
