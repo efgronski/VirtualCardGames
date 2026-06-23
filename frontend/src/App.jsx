@@ -296,14 +296,14 @@ function DiceGameBoard({ game, user, isMyTurn, act, isSolo = false, onNewGame })
 
       {viewerPanel ? (
         <div className="controls dice-controls">
-          {!game.gameOver ? (
-            <button type="button" className="dice-roll-btn" disabled={!canRoll} onClick={() => act({ type: 'roll' })}>
-              {viewerPanel.rollsUsed === 0 ? 'Roll Dice' : `Roll Again (${viewerPanel.rollsRemaining} left)`}
-            </button>
-          ) : null}
           {isSolo ? (
             <button type="button" onClick={onNewGame}>
               New Game
+            </button>
+          ) : null}
+          {!game.gameOver ? (
+            <button type="button" className="dice-roll-btn" disabled={!canRoll} onClick={() => act({ type: 'roll' })}>
+              {viewerPanel.rollsUsed === 0 ? 'Roll Dice' : `Roll Again (${viewerPanel.rollsRemaining} left)`}
             </button>
           ) : null}
         </div>
@@ -746,6 +746,14 @@ export default function App() {
                 >
                   {showMobileLobbyMenu ? 'Close Menu' : 'Menu'}
                 </button>
+                {showMobileLobbyMenu ? (
+                  <div className="mobile-account-menu">
+                    <span className="user-chip">{user.username}</span>
+                    <button className="link" onClick={logout}>
+                      Logout
+                    </button>
+                  </div>
+                ) : null}
               </div>
 
               {pendingInviteCode && !roomCode ? (
